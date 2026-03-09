@@ -21,6 +21,11 @@ class OutputConfig:
     output_dir: str | Path | None = None
     export_excel: bool = False
     export_plots: bool = False
+    embed_excel_charts: bool = False
+    show_inline_plots: bool = False
+    chart_detail_level: str = "detailed"
+    legend_position: str = "upper right"
+    style_overrides: dict[str, Any] = field(default_factory=dict)
     save_json: bool = True
     run_id: str | None = None
 

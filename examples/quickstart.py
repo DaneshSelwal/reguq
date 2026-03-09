@@ -10,7 +10,13 @@ result = run_quantile(
     target_col="target",
     models=["lightgbm", "xgboost"],
     params_source={"mode": "defaults"},
-    output_config={"output_dir": "./outputs/quickstart", "export_excel": True},
+    output_config={
+        "output_dir": "./outputs/quickstart",
+        "export_excel": True,
+        "export_plots": True,
+        "embed_excel_charts": True,
+        "show_inline_plots": False,
+    },
 )
 
 print(result.metrics)

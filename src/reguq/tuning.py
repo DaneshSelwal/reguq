@@ -8,12 +8,13 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import KFold, cross_val_score
 
+from .charts import generate_phase_charts
 from .config import coerce_output_config
 from .constants import PHASE_TUNING
 from .data import prepare_data_bundle
-from .export import save_interval_plot, write_json, write_tuning_excel
+from .export import embed_images_in_excel, write_json, write_tuning_excel
 from .metrics import regression_metrics
-from .types import OutputConfig, SplitConfig, TuningResult
+from .types import OutputConfig, PhaseResult, SplitConfig, TuningResult
 import reguq.registry as model_registry
 
 
@@ -118,19 +119,34 @@ def run_tuning(
         output_dir = Path(output_cfg.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        chart_result = None
+        if output_cfg.export_plots or output_cfg.embed_excel_charts or output_cfg.show_inline_plots:
+            pseudo_phase_result = PhaseResult(
+                phase=PHASE_TUNING,
+                predictions=predictions,
+                metrics=summary_df,
+                params=best_params,
+                artifacts=[],
+            )
+            chart_result = generate_phase_charts(
+                phase_result=pseudo_phase_result,
+                phase_name=PHASE_TUNING,
+                output_cfg=output_cfg,
+                output_dir=output_dir,
+                metrics_sheet_name="summary",
+            )
+
+        if output_cfg.export_plots and chart_result is not None:
+            result.artifacts.extend(chart_result.image_paths)
+
+        excel_path = output_dir / "tuning.xlsx"
         if output_cfg.export_excel:
-            excel_path = output_dir / "tuning.xlsx"
             result.artifacts.append(write_tuning_excel(result, excel_path))
+            if output_cfg.embed_excel_charts and chart_result is not None and chart_result.images_by_sheet:
+                embed_images_in_excel(workbook_path=excel_path, images_by_sheet=chart_result.images_by_sheet)
 
         if output_cfg.save_json:
             params_path = output_dir / "best_params.json"
             result.artifacts.append(write_json(result.best_params, params_path))
-
-        if output_cfg.export_plots:
-            for model_id, pred_df in predictions.items():
-                plot_path = output_dir / f"tuning_{model_id}.png"
-                result.artifacts.append(
-                    save_interval_plot(pred_df, plot_path, title=f"Tuning Predictions - {model_id}")
-                )
 
     return result

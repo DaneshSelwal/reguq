@@ -43,8 +43,8 @@ card = []
 
 [project.urls]
 Homepage = "https://github.com/DaneshSelwal"
-Repository = "https://github.com/DaneshSelwal/Regression_Uncertainty_Quantification_Analysis"
-Issues = "https://github.com/DaneshSelwal/Regression_Uncertainty_Quantification_Analysis/issues"
+Repository = "https://github.com/DaneshSelwal/reguq"
+Issues = "https://github.com/DaneshSelwal/reguq/issues"
 
 [project.scripts]
 reguq-run = "reguq.runner:main"

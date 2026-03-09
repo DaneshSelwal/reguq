@@ -9,10 +9,11 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+from .charts import generate_conformal_charts
 from .config import coerce_output_config
 from .constants import DEFAULT_ALPHA, PHASE_CONFORMAL_STANDARD
 from .data import prepare_data_bundle
-from .export import save_interval_plot, write_conformal_excel, write_json
+from .export import embed_images_in_excel, write_conformal_excel, write_json
 from .metrics import interval_metrics, regression_metrics
 from .params import resolve_model_params
 from .types import ConformalResult, OutputConfig, PhaseResult, SplitConfig
@@ -235,21 +236,23 @@ def run_conformal_standard(
         output_dir = Path(output_cfg.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        chart_result = None
+        if output_cfg.export_plots or output_cfg.embed_excel_charts or output_cfg.show_inline_plots:
+            chart_result = generate_conformal_charts(
+                conformal_result=result,
+                output_cfg=output_cfg,
+                output_dir=output_dir,
+            )
+        if output_cfg.export_plots and chart_result is not None:
+            result.artifacts.extend(chart_result.image_paths)
+
+        excel_path = output_dir / "conformal_standard.xlsx"
         if output_cfg.export_excel:
-            result.artifacts.append(write_conformal_excel(result, output_dir / "conformal_standard.xlsx"))
+            result.artifacts.append(write_conformal_excel(result, excel_path))
+            if output_cfg.embed_excel_charts and chart_result is not None and chart_result.images_by_sheet:
+                embed_images_in_excel(workbook_path=excel_path, images_by_sheet=chart_result.images_by_sheet)
 
         if output_cfg.save_json and tuned_params:
             result.artifacts.append(write_json(tuned_params, output_dir / "conformal_tuned_params.json"))
-
-        if output_cfg.export_plots:
-            for method_name, method_result in method_results.items():
-                for model_id, pred_df in method_result.predictions.items():
-                    result.artifacts.append(
-                        save_interval_plot(
-                            pred_df,
-                            output_dir / f"conformal_{method_name}_{model_id}.png",
-                            title=f"Conformal {method_name} - {model_id}",
-                        )
-                    )
 
     return result

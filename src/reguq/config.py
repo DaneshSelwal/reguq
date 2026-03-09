@@ -42,10 +42,21 @@ def coerce_output_config(value: Mapping[str, Any] | OutputConfig | None) -> Outp
     if isinstance(value, OutputConfig):
         return value
     cfg = dict(value)
+    style_overrides = cfg.get("style_overrides", {})
+    if style_overrides is None:
+        style_overrides = {}
+    if not isinstance(style_overrides, Mapping):
+        raise ValueError("output.style_overrides must be a mapping when provided.")
+
     return OutputConfig(
         output_dir=cfg.get("output_dir"),
         export_excel=bool(cfg.get("export_excel", False)),
         export_plots=bool(cfg.get("export_plots", False)),
+        embed_excel_charts=bool(cfg.get("embed_excel_charts", False)),
+        show_inline_plots=bool(cfg.get("show_inline_plots", False)),
+        chart_detail_level=str(cfg.get("chart_detail_level", "detailed")),
+        legend_position=str(cfg.get("legend_position", "upper right")),
+        style_overrides=dict(style_overrides),
         save_json=bool(cfg.get("save_json", True)),
         run_id=cfg.get("run_id"),
     )

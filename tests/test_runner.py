@@ -21,6 +21,8 @@ def test_run_from_config_smoke(tmp_path: Path, synthetic_paths, patched_estimato
         "output": {
             "output_dir": str(tmp_path / "runner_outputs"),
             "export_excel": True,
+            "export_plots": True,
+            "embed_excel_charts": True,
             "save_json": True,
         },
     }
@@ -38,6 +40,7 @@ def test_run_from_config_smoke(tmp_path: Path, synthetic_paths, patched_estimato
     assert (run_result.output_dir / "quantile.xlsx").exists()
     assert (run_result.output_dir / "probabilistic.xlsx").exists()
     assert (run_result.output_dir / "conformal_standard.xlsx").exists()
+    assert any(p.suffix == ".png" for p in run_result.output_dir.rglob("*.png"))
 
 
 def test_run_from_config_with_tuning_merges_params(
@@ -76,3 +79,27 @@ def test_run_from_config_with_tuning_merges_params(
     assert tuning_result.best_params["lightgbm"]["n_estimators"] == 12
     assert quantile_result.params["lightgbm"]["n_estimators"] == 12
     assert (run_result.output_dir / "best_params.json").exists()
+
+
+def test_run_from_config_supports_report_alias(tmp_path: Path, synthetic_paths, patched_estimators):
+    train_path, test_path = synthetic_paths
+    config = {
+        "data": {
+            "train_path": str(train_path),
+            "test_path": str(test_path),
+            "target_col": "target",
+        },
+        "models": ["lightgbm"],
+        "phases": ["quantile"],
+        "params_source": {"mode": "defaults"},
+        "output": {"output_dir": str(tmp_path / "runner_alias")},
+        "report": {
+            "export_excel": True,
+            "export_plots": True,
+            "embed_excel_charts": True,
+        },
+    }
+
+    run_result = run_from_config(config)
+    assert (run_result.output_dir / "quantile.xlsx").exists()
+    assert any(p.suffix == ".png" for p in run_result.output_dir.rglob("*.png"))

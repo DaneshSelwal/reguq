@@ -25,9 +25,24 @@ def test_coerce_config_helpers():
     assert split.shuffle is True
     assert split.random_state == 7
 
-    output = coerce_output_config({"output_dir": "outputs/demo", "export_excel": True})
+    output = coerce_output_config(
+        {
+            "output_dir": "outputs/demo",
+            "export_excel": True,
+            "embed_excel_charts": True,
+            "show_inline_plots": True,
+            "chart_detail_level": "detailed",
+            "legend_position": "lower right",
+            "style_overrides": {"max_plot_points": 120},
+        }
+    )
     assert output.output_dir == "outputs/demo"
     assert output.export_excel is True
+    assert output.embed_excel_charts is True
+    assert output.show_inline_plots is True
+    assert output.chart_detail_level == "detailed"
+    assert output.legend_position == "lower right"
+    assert output.style_overrides["max_plot_points"] == 120
 
     params = coerce_params_source({"mode": "load_only", "params": {"lightgbm": {"n_estimators": 10}}})
     assert params.mode == "load_only"

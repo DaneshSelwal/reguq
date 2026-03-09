@@ -54,8 +54,12 @@ def run_from_config(config_or_path: Mapping[str, Any] | str | Path) -> PipelineR
     if invalid_phases:
         raise ValueError(f"Unsupported phases: {invalid_phases}")
 
-    output_cfg = coerce_output_config(config.get("output"))
-    output_map = config.get("output", {}) if isinstance(config.get("output"), dict) else {}
+    output_map: dict[str, Any] = {}
+    if isinstance(config.get("output"), dict):
+        output_map.update(config.get("output", {}))
+    if isinstance(config.get("report"), dict):
+        output_map.update(config.get("report", {}))
+    output_cfg = coerce_output_config(output_map)
 
     run_id = output_cfg.run_id or make_run_id()
     output_cfg.run_id = run_id

@@ -9,6 +9,7 @@ from .api import (
     run_quantile,
     run_tuning,
 )
+from .colab import bootstrap_colab_environment
 from .types import (
     ConformalResult,
     DataBundle,
@@ -26,6 +27,7 @@ __all__ = [
     "run_probabilistic",
     "run_conformal_standard",
     "run_from_config",
+    "bootstrap_colab_environment",
     "SplitConfig",
     "OutputConfig",
     "ParamsSourceConfig",

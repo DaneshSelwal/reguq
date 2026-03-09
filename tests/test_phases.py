@@ -64,3 +64,32 @@ def test_run_tuning_smoke(synthetic_paths, patched_estimators):
 
     assert set(result.best_params.keys()) == {"lightgbm", "xgboost"}
     assert not result.summary.empty
+
+
+def test_inline_plot_path_does_not_break(synthetic_paths, patched_estimators, monkeypatch, tmp_path):
+    import reguq.charts as charts
+
+    calls: list[bool] = []
+
+    def _fake_display(fig, enabled: bool):
+        calls.append(enabled)
+
+    monkeypatch.setattr(charts, "_display_inline", _fake_display)
+
+    train_path, test_path = synthetic_paths
+    result = run_quantile(
+        data={"train_path": train_path, "test_path": test_path},
+        target_col="target",
+        models=["lightgbm"],
+        params_source={"mode": "defaults"},
+        output_config={
+            "output_dir": str(tmp_path / "inline"),
+            "export_excel": False,
+            "export_plots": False,
+            "show_inline_plots": True,
+        },
+    )
+
+    assert not result.metrics.empty
+    assert any(calls)
+    assert not any(p.suffix == ".png" for p in result.artifacts)

@@ -174,7 +174,7 @@ This repository now includes an installable package under `src/reguq` that repla
 ### Install (GitHub, current)
 
 ```bash
-pip install "git+https://github.com/DaneshSelwal/Regression_Uncertainty_Quantification_Analysis.git"
+pip install "git+https://github.com/DaneshSelwal/reguq.git"
 ```
 
 ### API Quickstart
@@ -190,7 +190,15 @@ result = run_quantile(
     target_col="target",
     models=["lightgbm", "xgboost", "catboost"],
     params_source={"mode": "load_or_tune", "params": {}},
-    output_config={"output_dir": "./outputs/run_01", "export_excel": True},
+    output_config={
+        "output_dir": "./outputs/run_01",
+        "export_excel": True,
+        "export_plots": True,
+        "embed_excel_charts": True,
+        "show_inline_plots": False,
+        "chart_detail_level": "detailed",
+        "legend_position": "upper right",
+    },
 )
 
 print(result.metrics)
@@ -208,6 +216,8 @@ The runner supports YAML config files and executes selected phases:
 - `probabilistic`
 - `conformal_standard`
 
+Reporting settings can be passed under `output` (preferred) or `report` (alias).
+
 ### Public APIs
 
 - `run_tuning(data, target_col, models, tuning_config, output_config)`
@@ -215,6 +225,7 @@ The runner supports YAML config files and executes selected phases:
 - `run_probabilistic(data, target_col, models, params_source, output_config)`
 - `run_conformal_standard(data, target_col, models, params_source, conformal_config, output_config)`
 - `run_from_config(config_or_path)`
+- `bootstrap_colab_environment(repo_url, marker_path, quiet)`
 
 ### Data Input Contract
 
@@ -226,6 +237,12 @@ The runner supports YAML config files and executes selected phases:
 
 - APIs always return structured Python results (DataFrames + metadata).
 - Excel/plot artifacts are optional and controlled via `output_config`.
+- `output_config` supports rich reporting flags:
+  - `export_plots`
+  - `embed_excel_charts`
+  - `show_inline_plots`
+  - `chart_detail_level` (`detailed` recommended)
+  - `legend_position` (for chart legend placement)
 - When output paths are used through runner defaults, artifacts are written under `outputs/<run_id>/`.
 
 ### Colab Notes
@@ -233,9 +250,23 @@ The runner supports YAML config files and executes selected phases:
 This package is designed for Colab-first reproducibility with pinned dependencies in `pyproject.toml`. For notebook usage:
 
 ```bash
-!pip install "git+https://github.com/DaneshSelwal/Regression_Uncertainty_Quantification_Analysis.git"
+!pip install "git+https://github.com/DaneshSelwal/reguq.git"
+```
+
+Then run one-time bootstrap inside Colab:
+
+```python
+from reguq import bootstrap_colab_environment
+
+# First run installs pinned deps and restarts runtime automatically.
+bootstrap_colab_environment(repo_url="https://github.com/DaneshSelwal/reguq.git")
 ```
 
 ### PyPI Release (later)
 
 The package is currently GitHub-installable. A PyPI workflow template is included under `.github/workflows/publish-pypi.yml` for later release publishing.
+
+### Release Docs
+
+- Changelog: `CHANGELOG.md`
+- GitHub release checklist: `RELEASE.md`

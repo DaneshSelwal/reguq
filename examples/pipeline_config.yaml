@@ -42,5 +42,9 @@ conformal_standard:
 output:
   output_dir: ./outputs/example_run
   export_excel: true
-  export_plots: false
+  export_plots: true
+  embed_excel_charts: true
+  show_inline_plots: false
+  chart_detail_level: detailed
+  legend_position: upper right
   save_json: true
