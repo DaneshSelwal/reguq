@@ -1,0 +1,46 @@
+data:
+  train_path: ./Data_folder/Data/train.csv
+  test_path: ./Data_folder/Data/test.csv
+  target_col: target
+  split:
+    test_size: 0.2
+    shuffle: false
+    random_state: 42
+
+models:
+  - lightgbm
+  - xgboost
+  - catboost
+
+phases:
+  - tuning
+  - quantile
+  - probabilistic
+  - conformal_standard
+
+tuning:
+  n_trials: 20
+  cv: 3
+  scoring: neg_root_mean_squared_error
+  random_state: 42
+
+params_source:
+  mode: load_or_tune
+  params: {}
+
+quantile:
+  quantiles: [0.05, 0.95]
+
+probabilistic:
+  alpha: 0.1
+
+conformal_standard:
+  alpha: 0.1
+  methods: [mapie, puncc]
+  mapie_method: plus
+
+output:
+  output_dir: ./outputs/example_run
+  export_excel: true
+  export_plots: false
+  save_json: true

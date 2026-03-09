@@ -1,0 +1,15 @@
+# Python cache/build
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+
+# Local env/artifacts
+.venv/
+venv/
+.env
+outputs/
+
+# Jupyter
+.ipynb_checkpoints/
