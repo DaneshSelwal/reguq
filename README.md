@@ -250,7 +250,8 @@ Reporting settings can be passed under `output` (preferred) or `report` (alias).
 This package is designed for Colab-first reproducibility with pinned dependencies in `pyproject.toml`. For notebook usage:
 
 ```bash
-!pip install "git+https://github.com/DaneshSelwal/reguq.git"
+!pip uninstall -y reguq
+!pip install --upgrade --force-reinstall --no-cache-dir "git+https://github.com/DaneshSelwal/reguq.git@main"
 ```
 
 Then run one-time bootstrap inside Colab:

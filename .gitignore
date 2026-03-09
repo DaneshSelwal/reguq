@@ -11,6 +11,7 @@ __pycache__/
 venv/
 .env
 outputs/
+.DS_Store
 
 # Jupyter
 .ipynb_checkpoints/

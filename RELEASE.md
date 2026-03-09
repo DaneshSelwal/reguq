@@ -21,14 +21,14 @@ Confirm:
 ## 3) Tag and push
 
 ```bash
-git tag -a v0.1.0 -m "reguq v0.1.0"
+git tag -a v0.1.1 -m "reguq v0.1.1"
 git push origin main --tags
 ```
 
 ## 4) Create GitHub Release
 
 - Open repository Releases page.
-- Select tag `v0.1.0`.
+- Select tag `v0.1.1`.
 - Use the matching section from `CHANGELOG.md` for notes.
 
 ## 5) Post-release validation
@@ -36,7 +36,7 @@ git push origin main --tags
 In a fresh Colab runtime:
 
 ```python
-%pip -q install "git+https://github.com/DaneshSelwal/reguq.git@v0.1.0"
+%pip -q install "git+https://github.com/DaneshSelwal/reguq.git@v0.1.1"
 from reguq import bootstrap_colab_environment
 bootstrap_colab_environment(repo_url="https://github.com/DaneshSelwal/reguq.git")
 ```

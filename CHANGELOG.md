@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-03-10
+### Fixed
+- Colab import stability for `bootstrap_colab_environment` by documenting and using forced package refresh in the validation notebook.
+- Runtime stale-package issues by updating install flow to use `--upgrade --force-reinstall --no-cache-dir`.
+
+### Changed
+- Package version bumped to `0.1.1` for clear upgrade path from previous Colab sessions.
+
 ## [0.1.0] - 2026-03-09
 ### Added
 - Core `reguq` package modules for tuning, quantile regression, probabilistic regression, and standard conformal prediction.
