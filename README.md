@@ -14,16 +14,17 @@ Whether you are analyzing environmental data, financial time-series, or industri
 ## 📑 Table of Contents (Navigation)
 
 1. [📌 Project Overview](#-project-overview)
-2. [📂 Repository Structure](#-repository-structure)
-3. [📊 Dataset & Usage](#-dataset--usage)
-4. [🛠️ Workflow & Methodology](#-workflow--methodology)
+2. [📖 Documentation](#-documentation)
+3. [📂 Repository Structure](#-repository-structure)
+4. [📊 Dataset & Usage](#-dataset--usage)
+5. [🛠️ Workflow & Methodology](#-workflow--methodology)
     - [Phase 1: Hyperparameter Tuning](#phase-1-hyperparameter-tuning)
     - [Phase 2: Quantile Regression](#phase-2-quantile-regression)
     - [Phase 3: Probabilistic Distribution](#phase-3-probabilistic-distribution)
     - [Phase 3b: Probabilistic Distribution (CARD)](#phase-3b-probabilistic-distribution-card)
     - [Phase 4: Standard Conformal Predictions](#phase-4-standard-conformal-predictions)
     - [Phase 5: Adaptive & Non-Exchangeable CP](#phase-5-adaptive--non-exchangeable-cp)
-5. [🚀 Getting Started](#-getting-started)
+6. [🚀 Getting Started](#-getting-started)
 
 ---
 
@@ -37,6 +38,25 @@ This framework provides a rigorous path from raw data to confident predictions. 
 *   **Full Distribution Modeling**: Using **NGBoost** and **PGBM** to predict the full probability distribution parameters ($\mu, \sigma$).
 *   **Generative Modeling**: Leveraging **CARD (Classification and Regression Diffusion)** models to generate conditional distributions using diffusion processes.
 *   **Robust Uncertainty**: Implementation of **NEXCP (Non-Exchangeable Conformal Prediction)** and **Adaptive CP**, crucial for handling data drift and temporal dependencies where standard methods fail.
+
+---
+
+## 📖 Documentation
+
+**RegUQ** is now available as a Python package! Here's where to find documentation:
+
+- **[GUIDE.md](./GUIDE.md)** - Complete user guide with examples, API reference, and tutorials
+- **[SKILL.md](./SKILL.md)** - Technical architecture and implementation details for developers
+- **[CHANGELOG.md](./CHANGELOG.md)** - Version history and updates
+- **[RELEASE.md](./RELEASE.md)** - Release process and guidelines
+
+### Quick Links
+
+- **Installation**: See [Installation in GUIDE.md](./GUIDE.md#installation)
+- **Quick Start**: See [Quick Start in GUIDE.md](./GUIDE.md#quick-start)
+- **API Reference**: See [API Reference in GUIDE.md](./GUIDE.md#api-reference)
+- **Google Colab**: See [Colab Usage in GUIDE.md](./GUIDE.md#google-colab-usage)
+- **Technical Details**: See [SKILL.md](./SKILL.md)
 
 ---
 
