@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Added
+- Comprehensive GUIDE.md user documentation with examples, API reference, and tutorials
+- SKILL.md technical architecture documentation for developers
+- Tutorial notebook (examples/tutorial.ipynb) demonstrating package usage with synthetic data
+- FUTURE_WORK.md documenting planned features (NEXCP, Adaptive CP, CARD)
+- Documentation links in README.md for easy navigation
+
+### Changed
+- Updated README.md structure to highlight documentation resources
+
+### Deferred
+- Advanced conformal prediction methods (NEXCP, Adaptive CP, mfcs) - planned for v0.2.0
+- CARD (diffusion model) implementation - planned for v0.3.0
+- See FUTURE_WORK.md for detailed roadmap
+
 ## [0.1.1] - 2026-03-10
 ### Fixed
 - Colab import stability for `bootstrap_colab_environment` by documenting and using forced package refresh in the validation notebook.
