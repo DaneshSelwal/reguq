@@ -8,6 +8,8 @@ from typing import Any
 from .constants import (
     CORE_MODELS,
     PHASE_CONFORMAL_STANDARD,
+    PHASE_CONFORMAL_ADVANCED,
+    PHASE_EXPLAINABILITY,
     PHASE_PROBABILISTIC,
     PHASE_QUANTILE,
     PHASE_TUNING,
@@ -25,27 +27,47 @@ _MODEL_SPECS: dict[str, ModelSpec] = {
     "lightgbm": ModelSpec(
         model_id="lightgbm",
         display_name="LightGBM",
-        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD}),
+        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
     ),
     "xgboost": ModelSpec(
         model_id="xgboost",
         display_name="XGBoost",
-        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD}),
+        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
     ),
     "catboost": ModelSpec(
         model_id="catboost",
         display_name="CatBoost",
-        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD}),
+        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
     ),
     "ngboost": ModelSpec(
         model_id="ngboost",
         display_name="NGBoost",
-        phases=frozenset({PHASE_TUNING, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD}),
+        phases=frozenset({PHASE_TUNING, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
     ),
     "pgbm": ModelSpec(
         model_id="pgbm",
         display_name="PGBM",
-        phases=frozenset({PHASE_TUNING, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD}),
+        phases=frozenset({PHASE_TUNING, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
+    ),
+    "randomforest": ModelSpec(
+        model_id="randomforest",
+        display_name="Random Forest",
+        phases=frozenset({PHASE_TUNING, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
+    ),
+    "gradientboosting": ModelSpec(
+        model_id="gradientboosting",
+        display_name="Gradient Boosting",
+        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
+    ),
+    "gpboost": ModelSpec(
+        model_id="gpboost",
+        display_name="GPBoost",
+        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
+    ),
+    "tabnet": ModelSpec(
+        model_id="tabnet",
+        display_name="TabNet",
+        phases=frozenset({PHASE_TUNING, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
     ),
 }
 
@@ -105,6 +127,30 @@ def _load_pgbm():
     return HistGradientBoostingRegressor
 
 
+def _load_randomforest():
+    from sklearn.ensemble import RandomForestRegressor
+
+    return RandomForestRegressor
+
+
+def _load_gradientboosting():
+    from sklearn.ensemble import GradientBoostingRegressor
+
+    return GradientBoostingRegressor
+
+
+def _load_gpboost():
+    from gpboost import GPBoostRegressor
+
+    return GPBoostRegressor
+
+
+def _load_tabnet():
+    from pytorch_tabnet.tab_model import TabNetRegressor
+
+    return TabNetRegressor
+
+
 def _point_defaults(model_id: str) -> dict[str, Any]:
     if model_id == "lightgbm":
         return {"random_state": 42, "n_estimators": 300}
@@ -121,6 +167,14 @@ def _point_defaults(model_id: str) -> dict[str, Any]:
         return {"random_state": 42, "n_estimators": 400, "verbose": False}
     if model_id == "pgbm":
         return {"random_state": 42, "max_iter": 300}
+    if model_id == "randomforest":
+        return {"random_state": 42, "n_estimators": 300, "n_jobs": -1}
+    if model_id == "gradientboosting":
+        return {"random_state": 42, "n_estimators": 300}
+    if model_id == "gpboost":
+        return {"random_state": 42, "n_estimators": 300, "verbose": 0}
+    if model_id == "tabnet":
+        return {"seed": 42, "verbose": 0}
     raise ValueError(f"Unsupported model '{model_id}'")
 
 
@@ -170,6 +224,34 @@ def build_estimator(
         base.update(params)
         return PGBMRegressor(**base)
 
+    if model_id == "randomforest":
+        RandomForestRegressor = _load_randomforest()
+        base = _point_defaults(model_id)
+        base.update(params)
+        return RandomForestRegressor(**base)
+
+    if model_id == "gradientboosting":
+        GradientBoostingRegressor = _load_gradientboosting()
+        base = _point_defaults(model_id)
+        if phase == PHASE_QUANTILE:
+            base.update({"loss": "quantile", "alpha": quantile})
+        base.update(params)
+        return GradientBoostingRegressor(**base)
+
+    if model_id == "gpboost":
+        GPBoostRegressor = _load_gpboost()
+        base = _point_defaults(model_id)
+        if phase == PHASE_QUANTILE:
+            base.update({"objective": "quantile", "alpha": quantile})
+        base.update(params)
+        return GPBoostRegressor(**base)
+
+    if model_id == "tabnet":
+        TabNetRegressor = _load_tabnet()
+        base = _point_defaults(model_id)
+        base.update(params)
+        return TabNetRegressor(**base)
+
     raise ValueError(f"Unsupported model '{model_id}'")
 
 
@@ -215,5 +297,38 @@ def suggest_hyperparameters(trial: Any, model_id: str) -> dict[str, Any]:
             "max_depth": trial.suggest_int("max_depth", 3, 12),
             "min_samples_leaf": trial.suggest_int("min_samples_leaf", 10, 80),
             "l2_regularization": trial.suggest_float("l2_regularization", 1e-8, 2.0, log=True),
+        }
+    if model_id == "randomforest":
+        return {
+            "n_estimators": trial.suggest_int("n_estimators", 100, 500),
+            "max_depth": trial.suggest_int("max_depth", 5, 30),
+            "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
+            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
+            "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", None]),
+        }
+    if model_id == "gradientboosting":
+        return {
+            "n_estimators": trial.suggest_int("n_estimators", 100, 500),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+            "max_depth": trial.suggest_int("max_depth", 3, 10),
+            "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
+            "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
+            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+        }
+    if model_id == "gpboost":
+        return {
+            "n_estimators": trial.suggest_int("n_estimators", 150, 700),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+            "max_depth": trial.suggest_int("max_depth", 3, 12),
+            "num_leaves": trial.suggest_int("num_leaves", 15, 127),
+            "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 100),
+        }
+    if model_id == "tabnet":
+        return {
+            "n_d": trial.suggest_int("n_d", 8, 64),
+            "n_a": trial.suggest_int("n_a", 8, 64),
+            "n_steps": trial.suggest_int("n_steps", 3, 10),
+            "gamma": trial.suggest_float("gamma", 1.0, 2.0),
+            "lambda_sparse": trial.suggest_float("lambda_sparse", 1e-6, 1e-2, log=True),
         }
     raise ValueError(f"No search space configured for model '{model_id}'")

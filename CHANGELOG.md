@@ -2,21 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.2.0] - 2026-03-22
 ### Added
-- Comprehensive GUIDE.md user documentation with examples, API reference, and tutorials
-- SKILL.md technical architecture documentation for developers
-- Tutorial notebook (examples/tutorial.ipynb) demonstrating package usage with synthetic data
-- FUTURE_WORK.md documenting planned features (NEXCP, Adaptive CP, CARD)
-- Documentation links in README.md for easy navigation
+- **New Models (4)**: Random Forest, Gradient Boosting, GPBoost, TabNet
+  - Total supported models now: 9 (LightGBM, XGBoost, CatBoost, NGBoost, PGBM, RandomForest, GradientBoosting, GPBoost, TabNet)
+
+- **Advanced Conformal Prediction** (`run_conformal_advanced`):
+  - NexCP Split: Non-exchangeable CP with exponential weighting
+  - NexCP Full: Full conformal prediction
+  - NexCP Jackknife+aB: Jackknife+ after Bootstrap
+  - NexCP CV+: Cross-Validation Plus
+  - Online Split: Online conformal prediction
+  - FACI: Fully Adaptive Conformal Inference
+  - MFCS Split/Full: Model-Free Conformal Selection
+  - CVPlus: PUNCC CV+ (Cross-Validation Plus)
+  - CQR: PUNCC Conformalized Quantile Regression
+
+- **Advanced Probabilistic Methods** (`run_probabilistic_advanced`):
+  - CARD: Classification And Regression Diffusion models
+  - IBUG: Instance-Based Uncertainty using Gradient Boosting
+  - Treeffuser: Diffusion-based gradient boosting (optional)
+
+- **Explainability Module** (`run_explainability`):
+  - SHAP: SHapley Additive exPlanations
+  - LIME: Local Interpretable Model-agnostic Explanations
+  - InterpretML: Explainable Boosting Machine
+
+- Comprehensive paper citations in README.md for all implemented methods
+- New API exports: `CARDRegressor`, `IBUGRegressor`, `explain_shap`, `explain_lime`, `explain_interpret`
+- Optional dependencies in pyproject.toml: `[interpretability]`, `[tabnet]`, `[advanced_probabilistic]`, `[all]`
 
 ### Changed
-- Updated README.md structure to highlight documentation resources
+- Version bump to 0.2.0
+- Registry expanded with 4 new models and hyperparameter search spaces
+- Constants updated with new phases: `PHASE_CONFORMAL_ADVANCED`, `PHASE_EXPLAINABILITY`
+- pyproject.toml updated with gpboost dependency and optional dependency groups
+- README.md completely restructured with comprehensive documentation and citations
 
-### Deferred
-- Advanced conformal prediction methods (NEXCP, Adaptive CP, mfcs) - planned for v0.2.0
-- CARD (diffusion model) implementation - planned for v0.3.0
-- See FUTURE_WORK.md for detailed roadmap
+### Technical Notes
+- CARD requires PyTorch (optional dependency)
+- TabNet requires pytorch-tabnet (optional dependency)
+- Treeffuser is an experimental optional dependency
+- All advanced methods gracefully fall back when dependencies are missing
 
 ## [0.1.1] - 2026-03-10
 ### Fixed

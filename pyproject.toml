@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reguq"
-version = "0.1.1"
+version = "0.2.0"
 description = "Colab-first regression uncertainty quantification toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,7 +29,8 @@ dependencies = [
   "catboost==1.2.8",
   "ngboost==0.5.8",
   "pgbm==2.2.0",
-  "properscoring==0.1"
+  "properscoring==0.1",
+  "gpboost==1.6.1"
 ]
 
 [project.optional-dependencies]
@@ -38,8 +39,23 @@ interpretability = [
   "lime==0.2.0.1",
   "interpret==0.7.4"
 ]
-advanced_cp = []
-card = []
+tabnet = [
+  "pytorch-tabnet==4.1.0",
+  "torch>=2.0.0"
+]
+advanced_probabilistic = [
+  "torch>=2.0.0"
+]
+treeffuser = [
+  "treeffuser"
+]
+all = [
+  "shap==0.44.0",
+  "lime==0.2.0.1",
+  "interpret==0.7.4",
+  "pytorch-tabnet==4.1.0",
+  "torch>=2.0.0"
+]
 
 [project.urls]
 Homepage = "https://github.com/DaneshSelwal"
