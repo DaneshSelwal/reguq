@@ -21,8 +21,19 @@ def _read_dataframe(source: pd.DataFrame | str | Path) -> pd.DataFrame:
 
 
 def _extract_train_test_from_mapping(data: Mapping[str, Any]) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
-    train = data.get("train") or data.get("train_df") or data.get("train_path")
-    test = data.get("test") or data.get("test_df") or data.get("test_path")
+    # Check each key individually to avoid DataFrame truth value issues
+    train = None
+    for key in ["train", "train_df", "train_path"]:
+        if key in data and data[key] is not None:
+            train = data[key]
+            break
+
+    test = None
+    for key in ["test", "test_df", "test_path"]:
+        if key in data and data[key] is not None:
+            test = data[key]
+            break
+
     if train is None and test is None:
         return None, None
     if train is None or test is None:
@@ -32,7 +43,11 @@ def _extract_train_test_from_mapping(data: Mapping[str, Any]) -> tuple[pd.DataFr
 
 def _extract_single_data(data: Any) -> pd.DataFrame:
     if isinstance(data, Mapping):
-        single = data.get("data") or data.get("data_df") or data.get("data_path")
+        single = None
+        for key in ["data", "data_df", "data_path"]:
+            if key in data and data[key] is not None:
+                single = data[key]
+                break
         if single is None:
             raise ValueError("Mapping data input must provide train/test or a single data source.")
         return _read_dataframe(single)
