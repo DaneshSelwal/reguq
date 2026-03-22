@@ -1,4 +1,4 @@
-# 🚀 Comprehensive Regression Analysis Pipeline: Advanced Uncertainty Quantification
+# Comprehensive Regression Analysis Pipeline: Advanced Uncertainty Quantification
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)
 ![Machine Learning](https://img.shields.io/badge/Machine%20Learning-XGBoost%20%7C%20LightGBM%20%7C%20CatBoost-orange?style=for-the-badge)
