@@ -16,6 +16,9 @@ from .api import (
     explain_interpret,
     CARDRegressor,
     IBUGRegressor,
+    ConformalRegressor,
+    QuantileRegressor,
+    ProbabilisticRegressor,
 )
 from .colab import bootstrap_colab_environment
 from .types import (
@@ -44,6 +47,10 @@ __all__ = [
     # CARD & IBUG classes
     "CARDRegressor",
     "IBUGRegressor",
+    # Object-Oriented Models
+    "ConformalRegressor",
+    "QuantileRegressor",
+    "ProbabilisticRegressor",
     # Explainability functions
     "explain_shap",
     "explain_lime",

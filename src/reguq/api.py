@@ -11,6 +11,7 @@ from .quantile import run_quantile
 from .runner import run_from_config
 from .tuning import run_tuning
 from .explainability import run_explainability, explain_shap, explain_lime, explain_interpret
+from .models import ConformalRegressor, QuantileRegressor, ProbabilisticRegressor
 
 __all__ = [
     # Core pipeline functions
@@ -27,6 +28,10 @@ __all__ = [
     # CARD & IBUG classes
     "CARDRegressor",
     "IBUGRegressor",
+    # Object-Oriented Models
+    "ConformalRegressor",
+    "QuantileRegressor",
+    "ProbabilisticRegressor",
     # Explainability functions
     "explain_shap",
     "explain_lime",
