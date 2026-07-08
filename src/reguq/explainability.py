@@ -35,29 +35,50 @@ def explain_shap(
     feature_names: list[str] | None = None,
     max_samples: int = 100,
 ) -> dict[str, Any]:
-    """Generate SHAP explanations.
+    """Generate SHAP explanations."""
+    try:
+        from interpret.blackbox import ShapKernel
+        use_interpret = True
+    except ImportError:
+        use_interpret = False
 
-    Reference:
-        Lundberg, S.M., Lee, S.I. "A Unified Approach to Interpreting Model
-        Predictions." NeurIPS 2017. https://arxiv.org/abs/1705.07874
+    X_train_np = _to_numpy(X_train)
+    X_test_np = _to_numpy(X_test)
+    feature_names = feature_names or [f"feature_{i}" for i in range(X_train_np.shape[1])]
 
-    Args:
-        model: A fitted sklearn-compatible model.
-        X_train: Training features for background data.
-        X_test: Test features to explain.
-        feature_names: Names of features.
-        max_samples: Maximum samples for background data.
+    if use_interpret:
+        if len(X_train_np) > max_samples:
+            idx = np.random.choice(len(X_train_np), max_samples, replace=False)
+            background = X_train_np[idx]
+        else:
+            background = X_train_np
+        
+        explainer = ShapKernel(model.predict, background, feature_names=feature_names)
+        explanation = explainer.explain_local(X_test_np)
 
-    Returns:
-        Dictionary with SHAP values and feature importance.
-    """
+        feature_importances_shap = {}
+        num_instances = len(X_test_np)
+        for idx in range(num_instances):
+            data = explanation.data(idx)
+            for name, score in zip(data['names'], data['scores']):
+                for fn in feature_names:
+                    if fn in name:
+                        feature_importances_shap[fn] = feature_importances_shap.get(fn, 0.0) + abs(score)
+                        break
+
+        feature_importance = [feature_importances_shap.get(name, 0.0) / num_instances for name in feature_names]
+
+        return {
+            "shap_values": explanation,
+            "expected_value": 0.0,
+            "feature_importance": np.array(feature_importance),
+            "feature_names": feature_names,
+        }
+
     try:
         import shap
     except ImportError:
         raise ImportError("SHAP not installed. Install with: pip install shap")
-
-    X_train_np = _to_numpy(X_train)
-    X_test_np = _to_numpy(X_test)
 
     # Subsample background data
     if len(X_train_np) > max_samples:
@@ -82,7 +103,7 @@ def explain_shap(
         "shap_values": shap_values,
         "expected_value": explainer.expected_value,
         "feature_importance": feature_importance,
-        "feature_names": feature_names or [f"feature_{i}" for i in range(X_train_np.shape[1])],
+        "feature_names": feature_names,
     }
 
 
@@ -99,33 +120,48 @@ def explain_lime(
     num_features: int = 10,
     num_samples: int = 5000,
 ) -> dict[str, Any]:
-    """Generate LIME explanations.
+    """Generate LIME explanations."""
+    try:
+        from interpret.blackbox import LimeTabular
+        use_interpret = True
+    except ImportError:
+        use_interpret = False
 
-    Reference:
-        Ribeiro, M.T., et al. "Why Should I Trust You?: Explaining the
-        Predictions of Any Classifier." KDD 2016.
-        https://arxiv.org/abs/1602.04938
+    X_train_np = _to_numpy(X_train)
+    X_test_np = _to_numpy(X_test)
+    feature_names = feature_names or [f"feature_{i}" for i in range(X_train_np.shape[1])]
 
-    Args:
-        model: A fitted sklearn-compatible model.
-        X_train: Training features for statistics.
-        X_test: Test features to explain.
-        feature_names: Names of features.
-        num_features: Number of features in explanation.
-        num_samples: Number of samples for LIME.
+    if use_interpret:
+        explainer = LimeTabular(
+            model.predict,
+            data=X_train_np,
+            feature_names=feature_names,
+            mode='regression'
+        )
+        explanation = explainer.explain_local(X_test_np)
 
-    Returns:
-        Dictionary with LIME explanations.
-    """
+        feature_importances_lime = {}
+        num_instances = len(X_test_np)
+        for idx in range(num_instances):
+            data = explanation.data(idx)
+            for name, score in zip(data['names'], data['scores']):
+                for fn in feature_names:
+                    if fn in name:
+                        feature_importances_lime[fn] = feature_importances_lime.get(fn, 0.0) + abs(score)
+                        break
+
+        feature_importance = {name: feature_importances_lime.get(name, 0.0) / num_instances for name in feature_names}
+
+        return {
+            "explanations": explanation,
+            "feature_importance": feature_importance,
+            "feature_names": feature_names,
+        }
+
     try:
         from lime.lime_tabular import LimeTabularExplainer
     except ImportError:
         raise ImportError("LIME not installed. Install with: pip install lime")
-
-    X_train_np = _to_numpy(X_train)
-    X_test_np = _to_numpy(X_test)
-
-    feature_names = feature_names or [f"feature_{i}" for i in range(X_train_np.shape[1])]
 
     explainer = LimeTabularExplainer(
         X_train_np,
@@ -378,29 +414,69 @@ def run_explainability(
         output_dir = Path(output_cfg.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        import matplotlib.pyplot as plt
+        import logging
+
         # Save feature importance plots
-        if output_cfg.export_plots:
-            try:
-                import matplotlib.pyplot as plt
+        side_by_side_plots = {}
+        single_plots = {}
 
-                for key, df in predictions.items():
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    top_n = min(15, len(df))
-                    df_top = df.head(top_n)
+        # 1. Generate side-by-side plots for models having both shap and lime
+        for model_id in model_ids:
+            key_shap = f"{model_id}_shap"
+            key_lime = f"{model_id}_lime"
+            if key_shap in predictions and key_lime in predictions:
+                try:
+                    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+                    df_shap = predictions[key_shap]
+                    top_n = min(10, len(df_shap))
+                    df_shap_top = df_shap.head(top_n)
+                    ax1.bar(df_shap_top["feature"], df_shap_top["importance"], color='skyblue')
+                    ax1.set_ylabel("SHAP Importance")
+                    ax1.set_title("SHAP Feature Importance")
+                    ax1.tick_params(axis='x', rotation=45)
 
-                    ax.barh(df_top["feature"], df_top["importance"])
-                    ax.set_xlabel("Importance")
-                    ax.set_ylabel("Feature")
-                    ax.set_title(f"Feature Importance - {key}")
-                    ax.invert_yaxis()
+                    df_lime = predictions[key_lime]
+                    df_lime_top = df_lime.head(top_n)
+                    ax2.bar(df_lime_top["feature"], df_lime_top["importance"], color='salmon')
+                    ax2.set_ylabel("LIME Importance")
+                    ax2.set_title("LIME Feature Importance")
+                    ax2.tick_params(axis='x', rotation=45)
 
                     plt.tight_layout()
-                    plot_path = output_dir / f"feature_importance_{key}.png"
+                    plot_path = output_dir / f"feature_importance_{model_id}_side_by_side.png"
                     fig.savefig(plot_path, dpi=150)
                     plt.close(fig)
+
+                    side_by_side_plots[model_id] = plot_path
                     result.artifacts.append(plot_path)
-            except Exception:
-                pass
+                except Exception as e:
+                    logging.warning(f"Failed to generate side-by-side plot for {model_id}: {e}")
+
+        # 2. Generate single plots for anything else
+        for key, df in predictions.items():
+            model_id = key.split("_")[0]
+            if model_id in side_by_side_plots:
+                continue
+            try:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                top_n = min(15, len(df))
+                df_top = df.head(top_n)
+                ax.bar(df_top["feature"], df_top["importance"], color='skyblue')
+                ax.set_ylabel("Importance")
+                ax.set_xlabel("Feature")
+                ax.set_title(f"Feature Importance - {key}")
+                ax.tick_params(axis='x', rotation=45)
+                plt.tight_layout()
+
+                plot_path = output_dir / f"feature_importance_{key}.png"
+                fig.savefig(plot_path, dpi=150)
+                plt.close(fig)
+
+                single_plots[key] = plot_path
+                result.artifacts.append(plot_path)
+            except Exception as e:
+                logging.warning(f"Failed to generate plot for {key}: {e}")
 
         # Save importance data to Excel
         if output_cfg.export_excel:
@@ -411,8 +487,24 @@ def run_explainability(
                     for key, df in predictions.items():
                         sheet_name = key[:31]  # Excel sheet name limit
                         df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+                # Embed explanation plots
+                if output_cfg.embed_excel_charts:
+                    images_by_sheet = {}
+                    for key in predictions.keys():
+                        model_id = key.split("_")[0]
+                        sheet_name = key[:31]
+                        if model_id in side_by_side_plots:
+                            images_by_sheet[sheet_name] = [side_by_side_plots[model_id]]
+                        elif key in single_plots:
+                            images_by_sheet[sheet_name] = [single_plots[key]]
+
+                    if images_by_sheet:
+                        from .export import embed_images_in_excel
+                        embed_images_in_excel(workbook_path=excel_path, images_by_sheet=images_by_sheet)
+
                 result.artifacts.append(excel_path)
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warning(f"Failed to write Excel: {e}")
 
     return result

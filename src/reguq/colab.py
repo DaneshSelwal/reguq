@@ -26,6 +26,20 @@ PINNED_PACKAGES = [
     "openpyxl==3.1.5",
     "XlsxWriter==3.2.9",
     "PyYAML==6.0.2",
+    "gpboost",
+    "pytorch-tabnet2",
+    "torch",
+    "optunahub",
+    "cmaes",
+    "bayesian-optimization",
+    "shap",
+    "lime",
+    "interpret",
+    "skorch",
+    "kaleido",
+    "dask",
+    "treeffuser",
+    "deel-puncc",
 ]
 
 

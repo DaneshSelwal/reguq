@@ -76,16 +76,63 @@ def write_tuning_excel(result: TuningResult, output_path: Path) -> Path:
 
 def write_conformal_excel(result: ConformalResult, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # 1. Combine metrics
+    all_metrics_list = []
+    for method_name, method_result in result.methods.items():
+        if not method_result.metrics.empty:
+            all_metrics_list.append(method_result.metrics)
+            
+    if all_metrics_list:
+        combined_metrics = pd.concat(all_metrics_list, ignore_index=True)
+    else:
+        combined_metrics = pd.DataFrame()
+            
+    # 2. Combine predictions and prepare individual worksheets
+    all_preds_list = []
+    individual_sheets = {}
+    
+    for method_name, method_result in result.methods.items():
+        for model_id, pred_df in method_result.predictions.items():
+            y_true = pred_df["y_true"]
+            y_pred = pred_df["y_pred"]
+            ymin = pred_df["ymin"] if "ymin" in pred_df.columns else (pred_df["y_lower"] if "y_lower" in pred_df.columns else y_pred)
+            ymax = pred_df["ymax"] if "ymax" in pred_df.columns else (pred_df["y_upper"] if "y_upper" in pred_df.columns else y_pred)
+            width = ymax - ymin
+            is_covered = ((y_true >= ymin) & (y_true <= ymax)).astype(int)
+            residual = y_true - y_pred
+            backend_val = pred_df["backend"] if "backend" in pred_df.columns else method_name
+            strategy_val = f"{method_name}_{model_id}"
+
+            comb_df = pd.DataFrame({
+                "sample_index": range(len(pred_df)),
+                "strategy": strategy_val,
+                "model": model_id,
+                "y_true": y_true,
+                "y_pred": y_pred,
+                "ymin": ymin,
+                "ymax": ymax,
+                "width": width,
+                "is_covered": is_covered,
+                "residual": residual,
+                "backend": backend_val
+            })
+            all_preds_list.append(comb_df)
+            
+            sheet_name = safe_sheet_name(f"{method_name}_{model_id}")
+            individual_sheets[sheet_name] = comb_df
+
     with pd.ExcelWriter(output_path, engine=_excel_engine()) as writer:
-        for method_name, method_result in result.methods.items():
-            method_result.metrics.to_excel(
-                writer,
-                sheet_name=safe_sheet_name(f"m_{method_name}"),
-                index=False,
-            )
-            for model_id, pred_df in method_result.predictions.items():
-                sheet = safe_sheet_name(f"{method_name}_{model_id}")
-                pred_df.to_excel(writer, sheet_name=sheet, index=False)
+        combined_metrics.to_excel(writer, sheet_name="metrics", index=False)
+        
+        if all_preds_list:
+            combined_df = pd.concat(all_preds_list, ignore_index=True)
+            combined_df.to_excel(writer, sheet_name="predictions", index=False)
+            combined_df.to_excel(writer, sheet_name="all_pred_values", index=False)
+            
+        for sheet_name, sheet_df in individual_sheets.items():
+            sheet_df.to_excel(writer, sheet_name=sheet_name, index=False)
+            
     return output_path
 
 

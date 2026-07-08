@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Mapping
+import logging
 
 import numpy as np
 import pandas as pd
@@ -14,7 +15,7 @@ from .config import coerce_output_config
 from .constants import DEFAULT_ALPHA, PHASE_CONFORMAL_STANDARD
 from .data import prepare_data_bundle
 from .export import embed_images_in_excel, write_conformal_excel, write_json
-from .metrics import interval_metrics, regression_metrics
+from .metrics import interval_metrics, regression_metrics, ssc, cwc
 from .params import resolve_model_params
 from .types import ConformalResult, OutputConfig, PhaseResult, SplitConfig
 import reguq.registry as model_registry
@@ -68,10 +69,16 @@ def _predict_mapie(
     X_test: pd.DataFrame,
     alpha: float,
     method: str,
+    cv: Any = "split",
+    random_state: int = 42,
 ):
     from mapie.regression import MapieRegressor
 
-    mapie_model = MapieRegressor(estimator=estimator, method=method, cv="split")
+    # Handle CV choice
+    if cv == "split":
+        mapie_model = MapieRegressor(estimator=estimator, method=method, cv="split")
+    else:
+        mapie_model = MapieRegressor(estimator=estimator, method=method, cv=cv, random_state=random_state)
     mapie_model.fit(X_train, y_train)
     y_pred, intervals = mapie_model.predict(X_test, alpha=alpha)
     y_lower, y_upper = _extract_interval_bounds(intervals)
@@ -84,13 +91,23 @@ def _predict_puncc(
     y_train: pd.Series,
     X_test: pd.DataFrame,
     alpha: float,
+    fit_ratio: float = 0.8,
+    random_state: int = 42,
 ):
     from deel.puncc.api.prediction import BasePredictor
     from deel.puncc.regression import SplitCP
 
     predictor = BasePredictor(estimator)
     cp = SplitCP(predictor)
-    cp.fit(X_train.to_numpy(), y_train.to_numpy())
+
+    # Use manual split to honor fit_ratio and random_state
+    X_train_np = X_train.to_numpy()
+    y_train_np = y_train.to_numpy()
+    X_fit, X_cal, y_fit, y_cal = train_test_split(
+        X_train_np, y_train_np, train_size=fit_ratio, random_state=random_state
+    )
+
+    cp.fit(X_fit=X_fit, y_fit=y_fit, X_calib=X_cal, y_calib=y_cal)
     outputs = cp.predict(X_test.to_numpy(), alpha=alpha)
 
     if isinstance(outputs, tuple) and len(outputs) >= 2:
@@ -112,6 +129,9 @@ def _run_method(
     mapie_method: str,
     calibration_size: float,
     random_state: int,
+    cv: Any = "split",
+    fit_ratio: float = 0.8,
+    K: int = 5,
 ) -> PhaseResult:
     metrics_rows: list[dict[str, float | str]] = []
     predictions: dict[str, pd.DataFrame] = {}
@@ -127,6 +147,8 @@ def _run_method(
         backend = method_name
         try:
             if method_name == "mapie":
+                # If cv is a number K, we can pass K
+                cv_param = K if isinstance(cv, int) or (isinstance(cv, str) and cv.isdigit()) else cv
                 y_pred, y_lower, y_upper = _predict_mapie(
                     estimator=estimator,
                     X_train=bundle.X_train,
@@ -134,6 +156,8 @@ def _run_method(
                     X_test=bundle.X_test,
                     alpha=alpha,
                     method=mapie_method,
+                    cv=cv_param,
+                    random_state=random_state,
                 )
             elif method_name == "puncc":
                 y_pred, y_lower, y_upper = _predict_puncc(
@@ -142,11 +166,17 @@ def _run_method(
                     y_train=bundle.y_train,
                     X_test=bundle.X_test,
                     alpha=alpha,
+                    fit_ratio=fit_ratio,
+                    random_state=random_state,
                 )
             else:
                 raise ValueError(f"Unknown conformal method '{method_name}'")
-        except Exception:
+        except Exception as e:
             backend = "manual_fallback"
+            import warnings
+            msg = f"Conformal standard method '{method_name}' failed on model '{model_id}': {str(e)}. Falling back to manual split conformal."
+            warnings.warn(msg, UserWarning)
+            logging.warning(msg)
             y_pred, y_lower, y_upper = _manual_split_conformal(
                 estimator=estimator,
                 X_train=bundle.X_train,
@@ -157,13 +187,36 @@ def _run_method(
                 random_state=random_state,
             )
 
+        # Determine strategy name matching reference notebooks
+        if method_name == "mapie":
+            if cv == "split":
+                strat_name = "SCP"
+            elif mapie_method == "plus":
+                strat_name = "CV+"
+            elif mapie_method == "minmax":
+                strat_name = "J+aB"
+            else:
+                strat_name = "SCP"
+        elif method_name == "puncc":
+            strat_name = "SCP"
+        else:
+            strat_name = method_name
+
         y_true = bundle.y_test.to_numpy()
         pred_df = pd.DataFrame(
             {
+                "sample_index": np.arange(len(y_true)),
+                "strategy": strat_name,
                 "y_true": y_true,
                 "y_pred": y_pred,
+                "ymin": y_lower,
+                "ymax": y_upper,
+                "width": y_upper - y_lower,
+                "is_covered": ((y_true >= y_lower) & (y_true <= y_upper)).astype(int),
+                "residual": y_true - y_pred,
                 "y_lower": y_lower,
                 "y_upper": y_upper,
+                "backend": backend,
             }
         )
         predictions[model_id] = pred_df
@@ -171,6 +224,8 @@ def _run_method(
         row = {"model": model_id, "method": method_name, "backend": backend, "alpha": alpha}
         row.update(regression_metrics(y_true=y_true, y_pred=y_pred))
         row.update(interval_metrics(y_true=y_true, y_lower=y_lower, y_upper=y_upper))
+        row["cwc"] = cwc(y_true=y_true, y_lower=y_lower, y_upper=y_upper, alpha=alpha)
+        row["ssc"] = ssc(y_true=y_true, y_pred=y_pred, y_lower=y_lower, y_upper=y_upper)
         metrics_rows.append(row)
 
     metrics_df = pd.DataFrame(metrics_rows)
@@ -202,6 +257,9 @@ def run_conformal_standard(
     methods = list(cfg.get("methods", ["mapie", "puncc"]))
     calibration_size = float(cfg.get("calibration_size", 0.2))
     random_state = int(cfg.get("random_state", 42))
+    cv = cfg.get("cv", "split")
+    fit_ratio = float(cfg.get("fit_ratio", 0.8))
+    K = int(cfg.get("K", 5))
 
     if not (0 < alpha < 1):
         raise ValueError("conformal alpha must satisfy 0 < alpha < 1")
@@ -224,6 +282,9 @@ def run_conformal_standard(
             mapie_method=mapie_method,
             calibration_size=calibration_size,
             random_state=random_state,
+            cv=cv,
+            fit_ratio=fit_ratio,
+            K=K,
         )
 
     result = ConformalResult(
@@ -250,7 +311,13 @@ def run_conformal_standard(
         if output_cfg.export_excel:
             result.artifacts.append(write_conformal_excel(result, excel_path))
             if output_cfg.embed_excel_charts and chart_result is not None and chart_result.images_by_sheet:
-                embed_images_in_excel(workbook_path=excel_path, images_by_sheet=chart_result.images_by_sheet)
+                redirected_images = {}
+                for sh_name, imgs in chart_result.images_by_sheet.items():
+                    if sh_name.startswith("m_"):
+                        redirected_images.setdefault(sh_name, []).extend(imgs)
+                    else:
+                        redirected_images.setdefault("all_pred_values", []).extend(imgs)
+                embed_images_in_excel(workbook_path=excel_path, images_by_sheet=redirected_images)
 
         if output_cfg.save_json and tuned_params:
             result.artifacts.append(write_json(tuned_params, output_dir / "conformal_tuned_params.json"))

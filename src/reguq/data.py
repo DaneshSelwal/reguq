@@ -107,13 +107,61 @@ def prepare_data_bundle(
             raise ValueError("Tuple data input must be (train_df, test_df).")
         train_df = _read_dataframe(data[0])
         test_df = _read_dataframe(data[1])
-        return _to_bundle(train_df, test_df, target_col)
-
-    if isinstance(data, Mapping):
+        bundle = _to_bundle(train_df, test_df, target_col)
+    elif isinstance(data, Mapping):
         train_df, test_df = _extract_train_test_from_mapping(data)
         if train_df is not None and test_df is not None:
-            return _to_bundle(train_df, test_df, target_col)
+            bundle = _to_bundle(train_df, test_df, target_col)
+        else:
+            full_df = _extract_single_data(data)
+            train_df, test_df = _split_single_dataset(full_df, split_cfg)
+            bundle = _to_bundle(train_df, test_df, target_col)
+    else:
+        full_df = _extract_single_data(data)
+        train_df, test_df = _split_single_dataset(full_df, split_cfg)
+        bundle = _to_bundle(train_df, test_df, target_col)
 
-    full_df = _extract_single_data(data)
-    train_df, test_df = _split_single_dataset(full_df, split_cfg)
-    return _to_bundle(train_df, test_df, target_col)
+    X_val = None
+    y_val = None
+    if split_cfg.val_size > 0.0:
+        from .preprocess import create_validation_split
+        X_tr_new, X_val_new, y_tr_new, y_val_new = create_validation_split(
+            bundle.X_train, bundle.y_train, val_size=split_cfg.val_size, random_state=split_cfg.random_state
+        )
+        bundle = DataBundle(
+            X_train=X_tr_new,
+            y_train=y_tr_new,
+            X_test=bundle.X_test,
+            y_test=bundle.y_test,
+            feature_columns=bundle.feature_columns,
+            X_val=X_val_new,
+            y_val=y_val_new,
+        )
+
+    if split_cfg.scale_features:
+        from .preprocess import scale_features
+        X_train_scaled, X_test_scaled, X_val_scaled, _ = scale_features(bundle.X_train, bundle.X_test, bundle.X_val)
+        bundle = DataBundle(
+            X_train=X_train_scaled,
+            y_train=bundle.y_train,
+            X_test=X_test_scaled,
+            y_test=bundle.y_test,
+            feature_columns=bundle.feature_columns,
+            X_val=X_val_scaled,
+            y_val=bundle.y_val,
+        )
+
+    if split_cfg.scale_targets:
+        from .preprocess import scale_targets
+        y_train_scaled, y_test_scaled, y_val_scaled, _ = scale_targets(bundle.y_train, bundle.y_test, bundle.y_val)
+        bundle = DataBundle(
+            X_train=bundle.X_train,
+            y_train=y_train_scaled,
+            X_test=bundle.X_test,
+            y_test=y_test_scaled,
+            feature_columns=bundle.feature_columns,
+            X_val=bundle.X_val,
+            y_val=y_val_scaled,
+        )
+
+    return bundle

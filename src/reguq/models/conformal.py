@@ -20,6 +20,14 @@ from ..conformal_advanced import (
     _predict_mfcs_full,
     _predict_puncc_cvplus,
     _predict_puncc_cqr,
+    _predict_saocp,
+    _predict_sf_ogd,
+    _predict_online_cv_plus,
+    _predict_online_jackknife_ab,
+    _predict_cop,
+    _predict_extreme,
+    _predict_alphanet,
+    _predict_normalized_cqr,
 )
 
 
@@ -54,6 +62,10 @@ class ConformalRegressor(BaseUQRegressor):
         n_folds: int = 5,
         n_bootstrap: int = 50,
         gamma: float = 0.01,
+        window_grid: tuple[int, ...] = (25, 50, 100, 200, 400),
+        cv: Any = "split",
+        fit_ratio: float = 0.8,
+        K: int = 5,
     ):
         self.base_estimator = base_estimator
         self.method = method
@@ -64,6 +76,10 @@ class ConformalRegressor(BaseUQRegressor):
         self.n_folds = n_folds
         self.n_bootstrap = n_bootstrap
         self.gamma = gamma
+        self.window_grid = window_grid
+        self.cv = cv
+        self.fit_ratio = fit_ratio
+        self.K = K
         
         self.estimator_ = None
         
@@ -129,11 +145,11 @@ class ConformalRegressor(BaseUQRegressor):
         try:
             if m == "mapie":
                 y_pred, y_lower, y_upper = _predict_mapie(
-                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, alpha, self.mapie_method
+                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, alpha, self.mapie_method, cv=self.cv, random_state=self.random_state
                 )
             elif m == "puncc":
                 y_pred, y_lower, y_upper = _predict_puncc(
-                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, alpha
+                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, alpha, fit_ratio=self.fit_ratio, random_state=self.random_state
                 )
             elif m == "manual_split":
                 y_pred, y_lower, y_upper = _manual_split_conformal(
@@ -166,7 +182,50 @@ class ConformalRegressor(BaseUQRegressor):
                 if y_test is None:
                     raise ValueError("Method 'faci' requires true labels (y_true) passed to predict() to adapt coverage.")
                 y_pred, y_lower, y_upper = _predict_faci(
-                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, y_test, alpha, self.gamma
+                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, y_test, alpha, self.window_grid
+                )
+            elif m == "saocp":
+                if y_test is None:
+                    raise ValueError("Method 'saocp' requires true labels (y_true) passed to predict() to adapt coverage.")
+                y_pred, y_lower, y_upper = _predict_saocp(
+                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, y_test, alpha
+                )
+            elif m == "sf_ogd":
+                if y_test is None:
+                    raise ValueError("Method 'sf_ogd' requires true labels (y_true) passed to predict() to adapt coverage.")
+                y_pred, y_lower, y_upper = _predict_sf_ogd(
+                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, y_test, alpha
+                )
+            elif m in ("online_cvplus", "online_cv_plus"):
+                if y_test is None:
+                    raise ValueError("Method 'online_cvplus' requires true labels (y_true) passed to predict() to adapt coverage.")
+                y_pred, y_lower, y_upper = _predict_online_cv_plus(
+                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, y_test, alpha
+                )
+            elif m == "online_jackknife_ab":
+                def model_builder(): return clone(self.base_estimator)
+                y_pred, y_lower, y_upper = _predict_online_jackknife_ab(
+                    model_builder, self.X_train_, self.y_train_, X_test, alpha, self.n_bootstrap, self.random_state
+                )
+            elif m == "cop":
+                if y_test is None:
+                    raise ValueError("Method 'cop' requires true labels (y_true) passed to predict() to adapt coverage.")
+                y_pred, y_lower, y_upper = _predict_cop(
+                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, y_test, alpha
+                )
+            elif m == "extreme":
+                if y_test is None:
+                    raise ValueError("Method 'extreme' requires true labels (y_true) passed to predict() to adapt coverage.")
+                y_pred, y_lower, y_upper = _predict_extreme(
+                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, y_test, alpha, n_bootstrap=self.n_bootstrap
+                )
+            elif m in ("alphanet", "alphanet/acp"):
+                y_pred, y_lower, y_upper = _predict_alphanet(
+                    clone(self.base_estimator), self.X_train_, self.y_train_, X_test, alpha, seed=self.random_state
+                )
+            elif m == "normalized_cqr":
+                y_pred, y_lower, y_upper = _predict_normalized_cqr(
+                    clone(self.base_estimator), clone(self.base_estimator), clone(self.base_estimator), pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), alpha, fit_ratio=self.fit_ratio, random_state=self.random_state
                 )
             elif m == "mfcs_split":
                 y_pred, y_lower, y_upper = _predict_mfcs_split(
@@ -178,23 +237,16 @@ class ConformalRegressor(BaseUQRegressor):
                 )
             elif m == "cvplus":
                 y_pred, y_lower, y_upper = _predict_puncc_cvplus(
-                    clone(self.base_estimator), pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), alpha
+                    clone(self.base_estimator), pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), alpha, K=self.K, random_state=self.random_state
                 )
             elif m == "cqr":
-                # Provide dummy lower/upper identical estimators since CQR transforms them internally
                 y_pred, y_lower, y_upper = _predict_puncc_cqr(
-                    clone(self.base_estimator), clone(self.base_estimator), pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), alpha
+                    clone(self.base_estimator), clone(self.base_estimator), pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), alpha, fit_ratio=self.fit_ratio, random_state=self.random_state
                 )
             else:
                 raise ValueError(f"Unknown conformal method: {m}")
         except Exception as e:
-            # Fallback
-            import warnings
-            warnings.warn(f"Method '{m}' failed with error: {e}. Falling back to 'manual_split'.")
-            y_pred, y_lower, y_upper = _manual_split_conformal(
-                clone(self.base_estimator), pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), 
-                alpha, self.calibration_size, self.random_state
-            )
+            raise RuntimeError(f"Conformal method '{m}' failed: {e}") from e
 
         return np.asarray(y_pred).ravel(), np.asarray(y_lower).ravel(), np.asarray(y_upper).ravel()
         
@@ -207,8 +259,8 @@ class ConformalRegressor(BaseUQRegressor):
         max_points: int = 300,
         title: str | None = None,
     ):
-        # We need to override this just in case method is FACI which requires y_true in predict()
-        if self.method.lower() == "faci" and y_true is not None:
+        # We need to override this just in case method requires y_true in predict()
+        if self.method.lower() in ("faci", "saocp", "sf_ogd", "online_cvplus", "online_cv_plus", "cop", "extreme") and y_true is not None:
             y_pred, y_lower, y_upper = self.predict(X, alpha=alpha, y_true=y_true)
             
             if len(y_pred) > max_points:

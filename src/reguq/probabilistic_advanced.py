@@ -8,6 +8,11 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import TensorDataset, DataLoader
+import random
 
 from .charts import generate_phase_charts
 from .config import coerce_output_config
@@ -88,25 +93,40 @@ class CARDRegressor:
             X: Training features.
             y: Training targets.
         """
-        try:
-            import torch
-            import torch.nn as nn
-        except ImportError:
-            raise ImportError("CARD requires PyTorch. Install with: pip install torch")
-
-        # Get base predictions
+        from sklearn.preprocessing import StandardScaler
         X_np = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
         y_np = _to_numpy(y)
 
+        # Scale features
+        self.feature_scaler = StandardScaler()
+        self.feature_scaler.fit(X_np)
+        if self.feature_scaler.scale_ is not None:
+            self.feature_scaler.scale_ = np.where(self.feature_scaler.scale_ == 0.0, 1.0, self.feature_scaler.scale_)
+        X_scaled = self.feature_scaler.transform(X_np)
+
+        # Get base predictions and residuals
         y_pred = self.base_model.predict(X_np)
         residuals = y_np - y_pred
 
-        X_t = torch.tensor(X_np, dtype=torch.float32).to(self.device)
-        r_t = torch.tensor(residuals, dtype=torch.float32).to(self.device)
+        # Scale residuals
+        self.residual_scaler = StandardScaler()
+        self.residual_scaler.fit(residuals.reshape(-1, 1))
+        if self.residual_scaler.scale_ is not None:
+            self.residual_scaler.scale_ = np.where(self.residual_scaler.scale_ == 0.0, 1.0, self.residual_scaler.scale_)
+        residuals_scaled = self.residual_scaler.transform(residuals.reshape(-1, 1)).ravel()
 
-        # Build MLP
+        # Setup linear beta schedule
+        betas = np.linspace(1e-4, 0.02, self.T)
+        alphas = 1.0 - betas
+        alphas_cumprod = np.cumprod(alphas)
+        self.alphas_cumprod = torch.tensor(alphas_cumprod, dtype=torch.float32).to(self.device)
+
+        X_t = torch.tensor(X_scaled, dtype=torch.float32).to(self.device)
+        r_t = torch.tensor(residuals_scaled, dtype=torch.float32).to(self.device)
+
+        # Build MLP. Input dimension: X features + 1 (for r_t_noisy) + 1 (for t)
         self.mlp = nn.Sequential(
-            nn.Linear(X_np.shape[1] + 1, self.hidden_dim),
+            nn.Linear(X_scaled.shape[1] + 2, self.hidden_dim),
             nn.ReLU(),
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(),
@@ -117,10 +137,15 @@ class CARDRegressor:
         loss_fn = nn.MSELoss()
 
         for _ in range(self.epochs):
-            t = torch.randint(0, self.T, (len(X_t),), dtype=torch.float32).to(self.device)
+            t = torch.randint(0, self.T, (len(X_t),), dtype=torch.long).to(self.device)
             noise = torch.randn_like(r_t)
 
-            pred_noise = self.mlp(torch.cat([X_t, t.unsqueeze(1)], dim=1)).squeeze()
+            alpha_bar_t = self.alphas_cumprod[t]
+            r_t_noisy = torch.sqrt(alpha_bar_t) * r_t + torch.sqrt(1.0 - alpha_bar_t) * noise
+
+            t_normalized = t.float() / float(self.T)
+            mlp_input = torch.cat([X_t, r_t_noisy.unsqueeze(1), t_normalized.unsqueeze(1)], dim=1)
+            pred_noise = self.mlp(mlp_input).squeeze()
 
             loss = loss_fn(pred_noise, noise)
 
@@ -143,26 +168,43 @@ class CARDRegressor:
         if not self._fitted:
             raise ValueError("Model not fitted. Call fit() first.")
 
-        try:
-            import torch
-        except ImportError:
-            raise ImportError("CARD requires PyTorch. Install with: pip install torch")
-
         X_np = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
         base_pred = self.base_model.predict(X_np)
 
-        X_t = torch.tensor(X_np, dtype=torch.float32).to(self.device)
+        X_scaled = self.feature_scaler.transform(X_np)
+
+        betas = torch.tensor(np.linspace(1e-4, 0.02, self.T), dtype=torch.float32).to(self.device)
+        alphas = 1.0 - betas
+
+        X_t = torch.tensor(X_scaled, dtype=torch.float32).to(self.device)
 
         samples = []
         for _ in range(self.n_samples):
-            t = torch.zeros(len(X_t)).to(self.device)
-            noise = torch.randn(len(X_t)).to(self.device)
+            r_curr = torch.randn(len(X_t), device=self.device)
+            for t_idx in reversed(range(self.T)):
+                t_tensor = torch.full((len(X_t),), t_idx, dtype=torch.long, device=self.device)
+                t_normalized = t_tensor.float() / float(self.T)
 
-            with torch.no_grad():
-                pred_noise = self.mlp(torch.cat([X_t, t.unsqueeze(1)], dim=1)).squeeze()
+                mlp_input = torch.cat([X_t, r_curr.unsqueeze(1), t_normalized.unsqueeze(1)], dim=1)
+                with torch.no_grad():
+                    pred_noise = self.mlp(mlp_input).squeeze()
 
-            corrected_noise = (noise - pred_noise).cpu().numpy()
-            samples.append(base_pred + corrected_noise)
+                beta_t = betas[t_idx]
+                alpha_t = alphas[t_idx]
+                alpha_bar_t = self.alphas_cumprod[t_idx]
+
+                mean = (r_curr - (beta_t / torch.sqrt(1.0 - alpha_bar_t)) * pred_noise) / torch.sqrt(alpha_t)
+
+                if t_idx > 0:
+                    z = torch.randn_like(r_curr)
+                    sigma_t = torch.sqrt(beta_t)
+                    r_curr = mean + sigma_t * z
+                else:
+                    r_curr = mean
+
+            r_curr_np = r_curr.cpu().numpy()
+            r_unscaled = self.residual_scaler.inverse_transform(r_curr_np.reshape(-1, 1)).ravel()
+            samples.append(base_pred + r_unscaled)
 
         samples = np.stack(samples, axis=1)
         return samples.mean(axis=1), _safe_sigma(samples.std(axis=1))
@@ -188,14 +230,35 @@ class IBUGRegressor:
     Args:
         base_model: A fitted gradient boosting model (LightGBM, XGBoost, etc.).
         n_neighbors: Number of nearest neighbors to consider (default: 50).
+        candidate_k: Candidate k values for validation tuning.
     """
 
-    def __init__(self, base_model, n_neighbors: int = 50):
+    def __init__(self, base_model, n_neighbors: int | None = None, candidate_k: list[int] | None = None):
         self.base_model = base_model
         self.n_neighbors = n_neighbors
+        self.candidate_k = candidate_k or [10, 20, 50, 100, 200]
         self._train_residuals = None
         self._train_leaves = None
         self._fitted = False
+
+    def _get_leaves(self, X_np, model=None):
+        estimator = model if model is not None else self.base_model
+        if hasattr(estimator, "predict"):
+            try:
+                # LightGBM
+                if hasattr(estimator, "booster_"):
+                    return estimator.booster_.predict(X_np, pred_leaf=True)
+                # XGBoost
+                elif hasattr(estimator, "get_booster"):
+                    import xgboost as xgb
+                    dmat = xgb.DMatrix(X_np)
+                    return estimator.get_booster().predict(dmat, pred_leaf=True)
+                # CatBoost
+                elif hasattr(estimator, "calc_leaf_indexes"):
+                    return estimator.calc_leaf_indexes(X_np)
+            except Exception:
+                pass
+        return None
 
     def fit(self, X, y):
         """Fit IBUG by storing training data leaf assignments.
@@ -207,30 +270,71 @@ class IBUGRegressor:
         X_np = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
         y_np = _to_numpy(y)
 
+        # Validation-set tuning if n_neighbors is not set
+        if self.n_neighbors is None:
+            from sklearn.model_selection import train_test_split
+            from sklearn.base import clone
+            X_tr, X_val, y_tr, y_val = train_test_split(X_np, y_np, test_size=0.2, random_state=42)
+
+            cloned_model = clone(self.base_model)
+            cloned_model.fit(X_tr, y_tr)
+
+            tr_leaves = self._get_leaves(X_tr, model=cloned_model)
+            val_leaves = self._get_leaves(X_val, model=cloned_model)
+
+            tr_preds = cloned_model.predict(X_tr)
+            tr_res = y_tr - tr_preds
+
+            val_preds = cloned_model.predict(X_val)
+            val_res = y_val - val_preds
+
+            best_k = 50
+            best_nll = float("inf")
+            n_train = len(X_tr)
+
+            candidates = [k for k in self.candidate_k if k <= n_train]
+            if not candidates:
+                candidates = [max(1, n_train - 1)]
+
+            if tr_leaves is not None and val_leaves is not None:
+                n_val = len(X_val)
+                matches = np.zeros((n_val, n_train), dtype=np.int32)
+                batch_size = 250
+                for start_idx in range(0, n_val, batch_size):
+                    end_idx = min(start_idx + batch_size, n_val)
+                    val_batch = val_leaves[start_idx:end_idx]
+                    matches[start_idx:end_idx] = np.sum(
+                        val_batch[:, np.newaxis, :] == tr_leaves[np.newaxis, :, :], axis=2
+                    )
+
+                for k in candidates:
+                    top_indices = np.argpartition(matches, -k, axis=1)[:, -k:]
+                    val_stds = np.std(tr_res[top_indices], axis=1)
+                    val_stds = _safe_sigma(val_stds)
+                    nll = 0.5 * np.log(2 * np.pi * val_stds**2) + 0.5 * (val_res / val_stds)**2
+                    mean_nll = np.mean(nll)
+                    if mean_nll < best_nll:
+                        best_nll = mean_nll
+                        best_k = k
+            else:
+                from sklearn.neighbors import NearestNeighbors
+                knn = NearestNeighbors(n_neighbors=min(max(candidates), len(X_tr)))
+                knn.fit(X_tr)
+                _, indices = knn.kneighbors(X_val)
+                for k in candidates:
+                    val_stds = np.std(tr_res[indices[:, :k]], axis=1)
+                    val_stds = _safe_sigma(val_stds)
+                    nll = 0.5 * np.log(2 * np.pi * val_stds**2) + 0.5 * (val_res / val_stds)**2
+                    mean_nll = np.mean(nll)
+                    if mean_nll < best_nll:
+                        best_nll = mean_nll
+                        best_k = k
+            
+            self.n_neighbors = best_k
+
         y_pred = self.base_model.predict(X_np)
         self._train_residuals = y_np - y_pred
-
-        # Get leaf indices for training data
-        if hasattr(self.base_model, "predict"):
-            try:
-                # LightGBM
-                if hasattr(self.base_model, "booster_"):
-                    self._train_leaves = self.base_model.booster_.predict(
-                        X_np, pred_leaf=True
-                    )
-                # XGBoost
-                elif hasattr(self.base_model, "get_booster"):
-                    import xgboost as xgb
-
-                    dmat = xgb.DMatrix(X_np)
-                    self._train_leaves = self.base_model.get_booster().predict(
-                        dmat, pred_leaf=True
-                    )
-                else:
-                    # Fallback: use residuals directly with KNN
-                    self._train_leaves = None
-            except Exception:
-                self._train_leaves = None
+        self._train_leaves = self._get_leaves(X_np)
 
         self._X_train = X_np
         self._fitted = True
@@ -252,27 +356,22 @@ class IBUGRegressor:
         y_pred = self.base_model.predict(X_np)
 
         stds = np.zeros(len(X_np))
+        test_leaves = self._get_leaves(X_np)
 
-        if self._train_leaves is not None:
+        if self._train_leaves is not None and test_leaves is not None:
             try:
-                # Get leaf indices for test data
-                if hasattr(self.base_model, "booster_"):
-                    test_leaves = self.base_model.booster_.predict(X_np, pred_leaf=True)
-                elif hasattr(self.base_model, "get_booster"):
-                    import xgboost as xgb
+                k = min(self.n_neighbors, self._train_leaves.shape[0])
+                if k < 1:
+                    k = 1
+                # Vectorized match comparison in batches of 250
+                batch_size = 250
+                for start_idx in range(0, len(X_np), batch_size):
+                    end_idx = min(start_idx + batch_size, len(X_np))
+                    test_batch = test_leaves[start_idx:end_idx]
 
-                    dmat = xgb.DMatrix(X_np)
-                    test_leaves = self.base_model.get_booster().predict(
-                        dmat, pred_leaf=True
-                    )
-
-                # For each test instance, find training instances in same leaves
-                for i, leaves in enumerate(test_leaves):
-                    # Count matching leaves
-                    matches = np.sum(self._train_leaves == leaves, axis=1)
-                    top_indices = np.argsort(matches)[-self.n_neighbors :]
-                    neighbor_residuals = self._train_residuals[top_indices]
-                    stds[i] = np.std(neighbor_residuals)
+                    matches = np.sum(test_batch[:, np.newaxis, :] == self._train_leaves[np.newaxis, :, :], axis=2)
+                    top_indices = np.argpartition(matches, -k, axis=1)[:, -k:]
+                    stds[start_idx:end_idx] = np.std(self._train_residuals[top_indices], axis=1)
 
             except Exception:
                 stds = np.full(len(X_np), np.std(self._train_residuals))
@@ -283,9 +382,7 @@ class IBUGRegressor:
             knn = NearestNeighbors(n_neighbors=min(self.n_neighbors, len(self._X_train)))
             knn.fit(self._X_train)
             _, indices = knn.kneighbors(X_np)
-
-            for i, idx in enumerate(indices):
-                stds[i] = np.std(self._train_residuals[idx])
+            stds = np.std(self._train_residuals[indices], axis=1)
 
         return y_pred, _safe_sigma(stds)
 
@@ -326,6 +423,7 @@ class TreeffuserWrapper:
         """
         try:
             from treeffuser import Treeffuser
+            from treeffuser.tree_score_model import TreeBasedScoreModel
         except ImportError:
             raise ImportError(
                 "Treeffuser not installed. Install with: pip install treeffuser"
@@ -334,7 +432,24 @@ class TreeffuserWrapper:
         X_np = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
         y_np = _to_numpy(y)
 
-        self._treeffuser = Treeffuser()
+        # Extract parameters and class name from base_model
+        model_name = self.base_model.__class__.__name__.lower()
+        if "lgbm" in model_name or "lightgbm" in model_name:
+            model_name = "lightgbm"
+        elif "xgb" in model_name:
+            model_name = "xgboost"
+        elif "catboost" in model_name:
+            model_name = "catboost"
+        elif "gpboost" in model_name:
+            model_name = "gpboost"
+        elif "gradientboosting" in model_name or "gradient_boosting" in model_name:
+            model_name = "gradient_boosting"
+        else:
+            model_name = "lightgbm"
+
+        model_params = self.base_model.get_params()
+        score_model = TreeBasedScoreModel(model_name=model_name, model_params=model_params)
+        self._treeffuser = Treeffuser(score_model=score_model)
         self._treeffuser.fit(X_np, y_np)
         self._fitted = True
         return self
@@ -357,6 +472,189 @@ class TreeffuserWrapper:
 
 
 # =============================================================================
+# Hyperspherical Confidence Mapping (HCM)
+# =============================================================================
+
+class HCMUCIRegressor(nn.Module):
+    """Paper-style tabular regression backbone: 3 hidden layers of width 20 with LeakyReLU."""
+
+    def __init__(self, input_dim):
+        super().__init__()
+        self.fc1 = nn.Linear(input_dim, 20)
+        self.fc2 = nn.Linear(20, 20)
+        self.fc3 = nn.Linear(20, 20)
+        self.fc4 = nn.Linear(20, 2)   # direction d
+        self.fc5 = nn.Linear(20, 1)   # magnitude R
+        self.act = nn.LeakyReLU(0.01)
+
+    def forward(self, x):
+        x = self.act(self.fc1(x))
+        x = self.act(self.fc2(x))
+        x = self.act(self.fc3(x))
+        d = self.fc4(x)
+        R = self.fc5(x)
+        return R, d
+
+
+class HCMRegressor:
+    """Hyperspherical Confidence Mapping (HCM) Regressor wrapper."""
+
+    def __init__(
+        self,
+        lr: float = 1e-3,
+        epochs: int = 200,
+        batch_size: int = 64,
+        patience: int = 15,
+        weight_decay: float = 1e-5,
+        seed: int = 42,
+        device: str = "cpu",
+    ):
+        self.lr = lr
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.patience = patience
+        self.weight_decay = weight_decay
+        self.seed = seed
+        self.device = device
+        self.model = None
+        self.scale = 1.0
+        self._fitted = False
+
+    def fit(self, X, y):
+        from sklearn.model_selection import train_test_split
+        from sklearn.preprocessing import StandardScaler
+
+        X_np = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X, dtype=np.float32)
+        y_np = _to_numpy(y).astype(np.float32)
+
+        self.feature_scaler = StandardScaler()
+        self.target_scaler = StandardScaler()
+
+        self.feature_scaler.fit(X_np)
+        if self.feature_scaler.scale_ is not None:
+            self.feature_scaler.scale_ = np.where(self.feature_scaler.scale_ == 0.0, 1.0, self.feature_scaler.scale_)
+        X_scaled = self.feature_scaler.transform(X_np)
+
+        self.target_scaler.fit(y_np.reshape(-1, 1))
+        if self.target_scaler.scale_ is not None:
+            self.target_scaler.scale_ = np.where(self.target_scaler.scale_ == 0.0, 1.0, self.target_scaler.scale_)
+        y_scaled = self.target_scaler.transform(y_np.reshape(-1, 1)).ravel()
+
+        X_tr, X_val, y_tr, y_val = train_test_split(X_scaled, y_scaled, test_size=0.2, random_state=self.seed)
+
+        torch.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        random.seed(self.seed)
+
+        self.model = HCMUCIRegressor(X_tr.shape[1]).to(self.device)
+        criterion = nn.MSELoss()
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+
+        train_dataset = TensorDataset(
+            torch.tensor(X_tr, dtype=torch.float32),
+            torch.tensor(np.concatenate([y_tr.reshape(-1, 1), y_tr.reshape(-1, 1)], axis=1), dtype=torch.float32)
+        )
+        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
+
+        best_state = None
+        best_val_loss = float("inf")
+        patience_counter = 0
+
+        for epoch in range(self.epochs):
+            self.model.train()
+            for x_batch, y_expanded in train_loader:
+                x_batch = x_batch.to(self.device)
+                y_expanded = y_expanded.to(self.device)
+
+                optimizer.zero_grad()
+                pred_R, pred_d = self.model(x_batch)
+
+                R_target = torch.sqrt(torch.sum(y_expanded ** 2, dim=1, keepdim=True))
+                d_target = y_expanded / (R_target + 1e-8)
+
+                d_loss = criterion(pred_R * d_target, y_expanded)
+                R_loss = criterion(R_target * pred_d, y_expanded)
+                loss = d_loss + R_loss
+
+                loss.backward()
+                optimizer.step()
+
+            self.model.eval()
+            with torch.no_grad():
+                x_val_tensor = torch.tensor(X_val, dtype=torch.float32, device=self.device)
+                pred_R_val, pred_d_val = self.model(x_val_tensor)
+                pred_y_val = (pred_R_val * pred_d_val)[:, 0].cpu().numpy()
+                val_loss = float(np.mean((y_val - pred_y_val) ** 2))
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_state = {k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()}
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            if patience_counter >= self.patience:
+                break
+
+        if best_state is not None:
+            self.model.load_state_dict(best_state)
+
+        # Temperature Calibration on validation set
+        self.model.eval()
+        with torch.no_grad():
+            x_val_tensor = torch.tensor(X_val, dtype=torch.float32, device=self.device)
+            pred_R_val, pred_d_val = self.model(x_val_tensor)
+            d_norm_sq_val = torch.sum(pred_d_val ** 2, dim=1)
+            sigma_hat_val = torch.sqrt(torch.abs(d_norm_sq_val - 1.0)) * torch.abs(pred_R_val.squeeze(-1))
+            raw_sigma_val = sigma_hat_val.cpu().numpy()
+            pred_y_val = (pred_R_val * pred_d_val)[:, 0].cpu().numpy()
+
+        absolute_errors_val = np.abs(y_val - pred_y_val)
+
+        # Temperature grid search
+        raw_sigma_val = np.clip(raw_sigma_val, 1e-8, None)
+        grid = np.logspace(-2, 2, 400)
+        target_coverage = np.array([0.68, 0.95, 0.997])
+        best_scale = 1.0
+        best_loss = np.inf
+        for scale in grid:
+            sigma_scaled = raw_sigma_val * scale
+            coverage = np.array([
+                np.mean(absolute_errors_val <= sigma_scaled),
+                np.mean(absolute_errors_val <= 2.0 * sigma_scaled),
+                np.mean(absolute_errors_val <= 3.0 * sigma_scaled)
+            ])
+            loss = np.sum((coverage - target_coverage) ** 2)
+            if loss < best_loss:
+                best_loss = loss
+                best_scale = scale
+
+        self.scale = float(best_scale)
+        self._fitted = True
+        return self
+
+    def predict(self, X) -> tuple[np.ndarray, np.ndarray]:
+        if not self._fitted:
+            raise ValueError("Model not fitted. Call fit() first.")
+
+        X_np = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X, dtype=np.float32)
+        X_scaled = self.feature_scaler.transform(X_np)
+
+        self.model.eval()
+        with torch.no_grad():
+            x_tensor = torch.tensor(X_scaled, dtype=torch.float32, device=self.device)
+            pred_R, pred_d = self.model(x_tensor)
+            d_norm_sq = torch.sum(pred_d ** 2, dim=1)
+            sigma_hat = torch.sqrt(torch.abs(d_norm_sq - 1.0)) * torch.abs(pred_R.squeeze(-1))
+            pred_y_scaled = (pred_R * pred_d)[:, 0].cpu().numpy()
+            sigma_hat_scaled = sigma_hat.cpu().numpy()
+
+        mean = self.target_scaler.inverse_transform(pred_y_scaled.reshape(-1, 1)).ravel()
+        sigma = sigma_hat_scaled * self.scale * float(self.target_scaler.scale_[0])
+        return mean, _safe_sigma(sigma)
+
+
+# =============================================================================
 # Main Runner Function
 # =============================================================================
 
@@ -372,6 +670,7 @@ def run_probabilistic_advanced(
     methods: list[str] | None = None,
     card_config: Mapping[str, Any] | None = None,
     ibug_config: Mapping[str, Any] | None = None,
+    hcm_config: Mapping[str, Any] | None = None,
 ) -> PhaseResult:
     """Run advanced probabilistic regression methods.
 
@@ -379,6 +678,7 @@ def run_probabilistic_advanced(
     - card: CARD (Classification And Regression Diffusion)
     - ibug: IBUG (Instance-Based Uncertainty using Gradient Boosting)
     - treeffuser: Treeffuser diffusion models
+    - hcm: Hyperspherical Confidence Mapping (HCM)
 
     Args:
         data: Input data (DataFrame, CSV path, or dict with train/test).
@@ -388,9 +688,10 @@ def run_probabilistic_advanced(
         output_config: Output configuration.
         split_config: Train/test split configuration.
         alpha: Significance level for intervals (default: 0.1).
-        methods: List of methods to run (default: ["card", "ibug"]).
+        methods: List of methods to run (default: ["card", "ibug", "treeffuser", "hcm"]).
         card_config: Configuration for CARD (hidden_dim, T, epochs, n_samples).
         ibug_config: Configuration for IBUG (n_neighbors).
+        hcm_config: Configuration for HCM (lr, epochs, batch_size, patience).
 
     Returns:
         PhaseResult with predictions and metrics.
@@ -402,9 +703,10 @@ def run_probabilistic_advanced(
     if not (0 < alpha < 1):
         raise ValueError("alpha must satisfy 0 < alpha < 1")
 
-    methods = methods or ["card", "ibug"]
+    methods = methods or ["card", "ibug", "treeffuser", "hcm"]
     card_cfg = dict(card_config or {})
     ibug_cfg = dict(ibug_config or {})
+    hcm_cfg = dict(hcm_config or {})
 
     model_params, tuned_params = resolve_model_params(
         models=model_ids,
@@ -444,7 +746,7 @@ def run_probabilistic_advanced(
                 elif method == "ibug":
                     wrapper = IBUGRegressor(
                         base_model=base_estimator,
-                        n_neighbors=ibug_cfg.get("n_neighbors", 50),
+                        n_neighbors=ibug_cfg.get("n_neighbors", None),
                     )
                     wrapper.fit(bundle.X_train, bundle.y_train)
                     mean, sigma = wrapper.predict(bundle.X_test)
@@ -453,6 +755,19 @@ def run_probabilistic_advanced(
                     wrapper = TreeffuserWrapper(
                         base_model=base_estimator,
                         n_samples=card_cfg.get("n_samples", 100),
+                    )
+                    wrapper.fit(bundle.X_train, bundle.y_train)
+                    mean, sigma = wrapper.predict(bundle.X_test)
+
+                elif method == "hcm":
+                    wrapper = HCMRegressor(
+                        lr=hcm_cfg.get("lr", 1e-3),
+                        epochs=hcm_cfg.get("epochs", 200),
+                        batch_size=hcm_cfg.get("batch_size", 64),
+                        patience=hcm_cfg.get("patience", 15),
+                        weight_decay=hcm_cfg.get("weight_decay", 1e-5),
+                        seed=hcm_cfg.get("seed", 42),
+                        device=hcm_cfg.get("device", "cpu"),
                     )
                     wrapper.fit(bundle.X_train, bundle.y_train)
                     mean, sigma = wrapper.predict(bundle.X_test)

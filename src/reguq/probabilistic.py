@@ -47,6 +47,10 @@ def _mean_std_from_samples(samples: np.ndarray, n_rows: int) -> tuple[np.ndarray
 
 
 def _predict_distribution(estimator, model_id: str, X_train, y_train, X_test) -> tuple[np.ndarray, np.ndarray]:
+    if model_id == "hcm" or estimator.__class__.__name__ == "HCMRegressor":
+        mean, std = estimator.predict(X_test)
+        return np.asarray(mean).ravel(), _safe_sigma(std)
+
     if model_id == "ngboost" and hasattr(estimator, "pred_dist"):
         dist = estimator.pred_dist(X_test)
         mean = np.asarray(dist.loc).ravel()

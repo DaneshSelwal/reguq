@@ -11,13 +11,17 @@ from .config import coerce_output_config, load_config
 from .constants import (
     ALL_PHASES,
     PHASE_CONFORMAL_STANDARD,
+    PHASE_CONFORMAL_ADVANCED,
     PHASE_PROBABILISTIC,
+    PHASE_PROBABILISTIC_ADVANCED,
     PHASE_QUANTILE,
     PHASE_TUNING,
 )
 from .conformal_standard import run_conformal_standard
+from .conformal_advanced import run_conformal_advanced
 from .export import make_run_id
 from .probabilistic import run_probabilistic
+from .probabilistic_advanced import run_probabilistic_advanced
 from .quantile import run_quantile
 from .tuning import run_tuning
 from .types import PipelineRunResult
@@ -118,6 +122,23 @@ def run_from_config(config_or_path: Mapping[str, Any] | str | Path) -> PipelineR
         )
         results[PHASE_PROBABILISTIC] = probabilistic_result
 
+    if PHASE_PROBABILISTIC_ADVANCED in phases:
+        probabilistic_adv_cfg = config.get("probabilistic_advanced", {})
+        probabilistic_adv_result = run_probabilistic_advanced(
+            data=data_input,
+            target_col=target_col,
+            models=models,
+            params_source=params_source,
+            output_config=output_cfg,
+            split_config=split_config,
+            alpha=float(probabilistic_adv_cfg.get("alpha", 0.1)),
+            methods=probabilistic_adv_cfg.get("methods"),
+            card_config=probabilistic_adv_cfg.get("card_config"),
+            ibug_config=probabilistic_adv_cfg.get("ibug_config"),
+            hcm_config=probabilistic_adv_cfg.get("hcm_config"),
+        )
+        results[PHASE_PROBABILISTIC_ADVANCED] = probabilistic_adv_result
+
     if PHASE_CONFORMAL_STANDARD in phases:
         conformal_result = run_conformal_standard(
             data=data_input,
@@ -129,6 +150,34 @@ def run_from_config(config_or_path: Mapping[str, Any] | str | Path) -> PipelineR
             split_config=split_config,
         )
         results[PHASE_CONFORMAL_STANDARD] = conformal_result
+
+    if PHASE_CONFORMAL_ADVANCED in phases:
+        conformal_adv_result = run_conformal_advanced(
+            data=data_input,
+            target_col=target_col,
+            models=models,
+            params_source=params_source,
+            conformal_config=config.get("conformal_advanced"),
+            output_config=output_cfg,
+            split_config=split_config,
+        )
+        results[PHASE_CONFORMAL_ADVANCED] = conformal_adv_result
+
+    if PHASE_EXPLAINABILITY in phases:
+        from .explainability import run_explainability
+        explain_cfg = config.get("explainability", {})
+        explain_result = run_explainability(
+            data=data_input,
+            target_col=target_col,
+            models=models,
+            params_source=params_source,
+            output_config=output_cfg,
+            split_config=split_config,
+            methods=explain_cfg.get("methods"),
+            shap_config=explain_cfg.get("shap_config"),
+            lime_config=explain_cfg.get("lime_config"),
+        )
+        results[PHASE_EXPLAINABILITY] = explain_result
 
     return PipelineRunResult(run_id=run_id, output_dir=output_dir, results=results)
 

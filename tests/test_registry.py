@@ -11,8 +11,8 @@ def test_validate_models_unknown_model_raises():
 
 
 def test_validate_models_phase_support():
-    with pytest.raises(ValueError):
-        registry.validate_models(["ngboost"], phase="quantile")
+    with pytest.raises(ValueError, match="does not support phase 'quantile'"):
+        registry.validate_models(["hcm"], phase="quantile")
 
 
 def test_list_supported_models_for_quantile_contains_expected_models():
@@ -20,4 +20,8 @@ def test_list_supported_models_for_quantile_contains_expected_models():
     assert "lightgbm" in supported
     assert "xgboost" in supported
     assert "catboost" in supported
-    assert "ngboost" not in supported
+    assert "ngboost" in supported
+    assert "pgbm" in supported
+    assert "tabnet" in supported
+    assert "randomforest" in supported
+    assert "hcm" not in supported

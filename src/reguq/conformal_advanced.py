@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Mapping
-
+import logging
+import random
 import numpy as np
 import pandas as pd
+from scipy.stats import genpareto
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import TensorDataset, DataLoader
 from sklearn.model_selection import KFold, train_test_split
 
 from .charts import generate_conformal_charts
@@ -59,13 +65,17 @@ def _predict_puncc_cvplus(
     y_train: pd.Series,
     X_test: pd.DataFrame,
     alpha: float,
+    K: int = 5,
+    random_state: int = 42,
 ):
     """PUNCC CV+ (Cross-Validation Plus) conformal prediction."""
     from deel.puncc.api.prediction import BasePredictor
     from deel.puncc.regression import CVPlus
 
     predictor = BasePredictor(estimator)
-    cp = CVPlus(predictor)
+    from sklearn.model_selection import KFold
+    kf = KFold(n_splits=K, shuffle=True, random_state=random_state)
+    cp = CVPlus(predictor, kfold=kf)
     cp.fit(X_train.to_numpy(), y_train.to_numpy())
     outputs = cp.predict(X_test.to_numpy(), alpha=alpha)
 
@@ -86,6 +96,8 @@ def _predict_puncc_cqr(
     y_train: pd.Series,
     X_test: pd.DataFrame,
     alpha: float,
+    fit_ratio: float = 0.8,
+    random_state: int = 42,
 ):
     """PUNCC CQR (Conformalized Quantile Regression) conformal prediction."""
     from deel.puncc.api.prediction import BasePredictor
@@ -94,7 +106,14 @@ def _predict_puncc_cqr(
     lower_predictor = BasePredictor(lower_estimator)
     upper_predictor = BasePredictor(upper_estimator)
     cp = CQR(lower_predictor, upper_predictor)
-    cp.fit(X_train.to_numpy(), y_train.to_numpy())
+
+    X_train_np = X_train.to_numpy()
+    y_train_np = y_train.to_numpy()
+    X_fit, X_cal, y_fit, y_cal = train_test_split(
+        X_train_np, y_train_np, train_size=fit_ratio, random_state=random_state
+    )
+
+    cp.fit(X_fit=X_fit, y_fit=y_fit, X_calib=X_cal, y_calib=y_cal)
     outputs = cp.predict(X_test.to_numpy(), alpha=alpha)
 
     if isinstance(outputs, tuple) and len(outputs) >= 2:
@@ -247,9 +266,9 @@ def _predict_faci(
     X_test: np.ndarray,
     y_test: np.ndarray,
     alpha: float,
-    gamma: float = 0.01,
+    window_grid: tuple[int, ...] = (25, 50, 100, 200, 400),
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Fully Adaptive Conformal Inference (FACI)."""
+    """Fully Adaptive Conformal Inference (FACI) with window-grid pinball loss optimizer."""
     estimator.fit(X_train, y_train)
     yhat_train = estimator.predict(X_train)
     yhat_test = estimator.predict(X_test)
@@ -266,22 +285,479 @@ def _predict_faci(
 
     residuals = np.abs(y_all - y_hat_all)
 
-    # FACI: Adaptive quantile adjustment
-    alphas = np.full(T - n_train, alpha)
-    y_lower = np.zeros(T - n_train)
-    y_upper = np.zeros(T - n_train)
+    windows = list(window_grid)
+    losses = np.zeros(len(windows))
+    lower, upper = [], []
+    for t in range(n_train, T):
+        qs = []
+        for i, w in enumerate(windows):
+            start = max(0, t - w)
+            q = np.quantile(residuals[start:t], 1 - alpha)
+            qs.append(q)
+        q_star = qs[np.argmin(losses)]
+        lower.append(yhat_test[t - n_train] - q_star)
+        upper.append(yhat_test[t - n_train] + q_star)
 
-    for t in range(T - n_train):
-        q = np.quantile(residuals[: n_train + t], 1 - alphas[t])
-        y_lower[t] = yhat_test[t] - q
-        y_upper[t] = yhat_test[t] + q
+        r_t = residuals[t]
+        for i, w in enumerate(windows):
+            q = qs[i]
+            losses[i] += alpha * q + (r_t - q) * (r_t > q)
 
-        # Update alpha based on coverage
-        if t > 0:
-            covered = (y_test[t - 1] >= y_lower[t - 1]) and (y_test[t - 1] <= y_upper[t - 1])
-            alphas[t] = max(0.01, min(0.5, alphas[t - 1] + gamma * (alpha - (1 if covered else 0))))
+    return yhat_test, np.array(lower), np.array(upper)
 
+
+def _predict_saocp(
+    estimator,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    alpha: float,
+    window_min: int = 50,
+    window_max: int = 500,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Semi-Adaptive Online Conformal Prediction (SAOCP)."""
+    estimator.fit(X_train, y_train)
+    yhat_train = estimator.predict(X_train)
+    yhat_test = estimator.predict(X_test)
+
+    X_all = np.vstack([X_train, X_test])
+    y_all = np.concatenate([y_train, y_test])
+    n_train = len(X_train)
+    T = len(y_all)
+
+    y_hat_all = np.zeros(T)
+    y_hat_all[:n_train] = yhat_train
+    for t in range(n_train, T):
+        y_hat_all[t] = estimator.predict(X_all[t : t + 1])[0]
+
+    residuals = np.abs(y_all - y_hat_all)
+    lower, upper = [], []
+    for t in range(n_train, T):
+        w = min(max(window_min, int(t / 2)), window_max)
+        start = max(0, t - w)
+        q = np.quantile(residuals[start:t], 1 - alpha)
+        lower.append(yhat_test[t - n_train] - q)
+        upper.append(yhat_test[t - n_train] + q)
+
+    return yhat_test, np.array(lower), np.array(upper)
+
+
+def _predict_sf_ogd(
+    estimator,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    alpha: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Scale-Free Online Gradient Descent (SF-OGD)."""
+    estimator.fit(X_train, y_train)
+    yhat_train = estimator.predict(X_train)
+    yhat_test = estimator.predict(X_test)
+
+    X_all = np.vstack([X_train, X_test])
+    y_all = np.concatenate([y_train, y_test])
+    n_train = len(X_train)
+    T = len(y_all)
+
+    y_hat_all = np.zeros(T)
+    y_hat_all[:n_train] = yhat_train
+    for t in range(n_train, T):
+        y_hat_all[t] = estimator.predict(X_all[t : t + 1])[0]
+
+    residuals = np.abs(y_all - y_hat_all)
+    q_t = np.quantile(residuals[:n_train], 1 - alpha)
+    lower, upper = [], []
+    for t in range(n_train, T):
+        lower.append(yhat_test[t - n_train] - q_t)
+        upper.append(yhat_test[t - n_train] + q_t)
+
+        r_t = residuals[t]
+        grad = alpha - (r_t > q_t)
+        eta = 1.0 / np.sqrt(t - n_train + 1)
+        q_t = max(0.0, q_t - eta * grad)
+
+    return yhat_test, np.array(lower), np.array(upper)
+
+
+def _predict_online_cv_plus(
+    estimator,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    alpha: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Online CV+ conformal prediction."""
+    estimator.fit(X_train, y_train)
+    yhat_train = estimator.predict(X_train)
+    yhat_test = estimator.predict(X_test)
+
+    X_all = np.vstack([X_train, X_test])
+    y_all = np.concatenate([y_train, y_test])
+    n_train = len(X_train)
+    T = len(y_all)
+
+    y_hat_all = np.zeros(T)
+    y_hat_all[:n_train] = yhat_train
+    for t in range(n_train, T):
+        y_hat_all[t] = estimator.predict(X_all[t : t + 1])[0]
+
+    residuals = np.abs(y_all - y_hat_all)
+    lower, upper = [], []
+    for t in range(n_train, T):
+        q = np.quantile(residuals[:t], 1 - alpha)
+        lower.append(yhat_test[t - n_train] - q)
+        upper.append(yhat_test[t - n_train] + q)
+
+    return yhat_test, np.array(lower), np.array(upper)
+
+
+def _predict_online_jackknife_ab(
+    model_builder,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    alpha: float,
+    n_bootstrap: int = 30,
+    random_state: int = 42,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Online Jackknife+ after Bootstrap (Online-J+aB)."""
+    rng = np.random.default_rng(random_state)
+    lowers, uppers, preds = [], [], []
+    for _ in range(n_bootstrap):
+        idx = rng.choice(len(X_train), len(X_train), replace=True)
+        m = model_builder()
+        m.fit(X_train[idx], y_train[idx])
+        res = np.abs(y_train[idx] - m.predict(X_train[idx]))
+        q = np.quantile(res, 1 - alpha)
+        p = m.predict(X_test)
+        preds.append(p)
+        lowers.append(p - q)
+        uppers.append(p + q)
+    y_pred = np.mean(preds, axis=0)
+    y_lower = np.min(lowers, axis=0)
+    y_upper = np.max(uppers, axis=0)
+    return y_pred, y_lower, y_upper
+
+
+def _predict_cop(
+    estimator,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    alpha: float,
+    lr: float = 0.05,
+    T_burnin: int = 50,
+    scale: float = 0.5,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Conformal Optimistic Prediction (COP)."""
+    estimator.fit(X_train, y_train)
+    y_pred_test = estimator.predict(X_test).ravel()
+    y_pred_train = estimator.predict(X_train).ravel()
+
+    scores_train = np.abs(y_train - y_pred_train)
+    init_q = np.quantile(scores_train, 1 - alpha)
+
+    scores = np.abs(y_test - y_pred_test)
+    T_test = len(scores)
+
+    qs = np.zeros(T_test)
+    qts = np.zeros(T_test)
+    integrators = np.zeros(T_test)
+    covereds = np.zeros(T_test)
+
+    qs[0] = init_q
+    qts[0] = init_q
+
+    for t in range(T_test - 1):
+        covereds[t] = 1 if qs[t] >= scores[t] else 0
+        grad = alpha if covereds[t] else -(1 - alpha)
+        if t < T_burnin:
+            grad_i = 0.0
+        else:
+            window_s = scores[t - T_burnin : t]
+            current_target = qts[t] - lr * grad
+            grad_i = np.mean(window_s <= current_target) - (1 - alpha)
+
+        integrator = -scale * grad_i
+        qts[t + 1] = qts[t] - lr * grad
+        integrators[t + 1] = lr * integrator
+        qs[t + 1] = max(0.0, qts[t + 1] + integrators[t + 1])
+
+    covereds[-1] = 1 if qs[-1] >= scores[-1] else 0
+    y_lower = y_pred_test - qs
+    y_upper = y_pred_test + qs
+    return y_pred_test, y_lower, y_upper
+
+
+def _predict_extreme(
+    estimator,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    alpha: float,
+    gpd_threshold_quantile: float = 0.9,
+    n_bootstrap: int = 30,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Extreme Conformal Prediction via Generalized Pareto Distribution."""
+    estimator.fit(X_train, y_train)
+    yhat_train = estimator.predict(X_train).ravel()
+    yhat_test = estimator.predict(X_test).ravel()
+
+    # Residuals of upper tail
+    scores = y_train - yhat_train
+    scores = scores[scores > 0]
+
+    if len(scores) < 30:
+        # Fallback to empirical quantile
+        q_extreme = np.quantile(scores, 1 - alpha)
+    else:
+        u = np.quantile(scores, gpd_threshold_quantile)
+        excesses = scores[scores > u] - u
+        boot_q = []
+        n_exc = len(excesses)
+        n_scores = len(scores)
+
+        for _ in range(n_bootstrap):
+            res = np.random.choice(excesses, size=n_exc, replace=True)
+            xi, _, sigma_gpd = genpareto.fit(res, floc=0)
+            xi = max(1e-4, xi)
+            q = u + (sigma_gpd / xi) * ((n_scores / (n_scores * alpha)) ** xi - 1)
+            boot_q.append(q)
+
+        q_extreme = np.quantile(boot_q, 0.95)
+
+    y_lower = yhat_test - q_extreme
+    y_upper = yhat_test + q_extreme
     return yhat_test, y_lower, y_upper
+
+
+# AlphaNet PyTorch components
+class AlphaNet(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid(),
+        )
+    def forward(self, x):
+        return self.net(x).squeeze(-1)
+
+
+def interval_size(scores, alpha_val, eps=1e-6):
+    n = scores.numel()
+    denominator = torch.clamp(alpha_val * (n + 1) - 1.0, min=eps)
+    return 2.0 * scores.sum() / denominator
+
+
+def _compute_scores_without_index(base_model, X_calib, y_calib, holdout_idx):
+    loo_X = np.delete(X_calib, holdout_idx, axis=0)
+    loo_y = np.delete(y_calib, holdout_idx, axis=0)
+    return np.abs(base_model.predict(loo_X) - loo_y)
+
+
+def _build_loo_feature_matrix(base_model, X_calib, y_calib):
+    rows = []
+    for idx in range(len(X_calib)):
+        scores = _compute_scores_without_index(base_model, X_calib, y_calib, idx)
+        rows.append([scores.sum()])
+    return torch.tensor(np.asarray(rows, dtype=np.float32))
+
+
+def _train_alpha_net(
+    base_model,
+    X_calib,
+    y_calib,
+    lambdas=(10.0, 20.0, 50.0),
+    num_runs=3,
+    epochs=50,
+    batch_size=32,
+    learning_rate=1e-3,
+    alpha_clip=1e-3,
+    seed=42,
+    device="cpu",
+):
+    X_train_alpha = _build_loo_feature_matrix(base_model, X_calib, y_calib)
+    all_results = {}
+    for lambda_reg in lambdas:
+        lambda_losses = []
+        lambda_sizes = []
+        lambda_alphas = []
+        lambda_models = []
+        for run_idx in range(num_runs):
+            local_seed = seed + run_idx
+            torch.manual_seed(local_seed)
+            np.random.seed(local_seed)
+            random.seed(local_seed)
+            dataset = TensorDataset(X_train_alpha, torch.arange(len(X_train_alpha), dtype=torch.long))
+            loader = DataLoader(dataset, batch_size=min(batch_size, len(X_train_alpha)), shuffle=True)
+            alpha_net = AlphaNet(input_dim=X_train_alpha.shape[1]).to(device)
+            optimizer = optim.Adam(alpha_net.parameters(), lr=learning_rate)
+            all_losses = []
+            all_sizes = []
+            all_alphas = []
+            for _ in range(epochs):
+                epoch_losses = []
+                epoch_sizes = []
+                epoch_alphas = []
+                alpha_net.train()
+                for x_batch, idx_batch in loader:
+                    x_batch = x_batch.to(device)
+                    alpha_min = 1.0 / (len(X_calib) + 1.0) + 0.01
+                    alpha_pred = torch.clamp(alpha_net(x_batch), min=max(alpha_clip, alpha_min), max=1.0 - alpha_clip)
+                    batch_sizes = []
+                    for j, idx in enumerate(idx_batch.tolist()):
+                        scores_np = _compute_scores_without_index(base_model, X_calib, y_calib, idx)
+                        scores_tensor = torch.tensor(scores_np, dtype=torch.float32, device=device)
+                        batch_sizes.append(interval_size(scores_tensor, alpha_pred[j]))
+                    batch_sizes = torch.stack(batch_sizes)
+                    loss = (batch_sizes + lambda_reg * alpha_pred).mean()
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    epoch_losses.append(float(loss.item()))
+                    epoch_sizes.append(float(batch_sizes.mean().item()))
+                    epoch_alphas.append(float(alpha_pred.mean().item()))
+                all_losses.append(float(np.mean(epoch_losses)))
+                all_sizes.append(float(np.mean(epoch_sizes)))
+                all_alphas.append(float(np.mean(epoch_alphas)))
+            alpha_net.eval()
+            lambda_losses.append(np.asarray(all_losses, dtype=np.float32))
+            lambda_sizes.append(np.asarray(all_sizes, dtype=np.float32))
+            lambda_alphas.append(np.asarray(all_alphas, dtype=np.float32))
+            lambda_models.append(alpha_net)
+        all_results[lambda_reg] = {
+            "all_losses": np.vstack(lambda_losses),
+            "all_sizes": np.vstack(lambda_sizes),
+            "all_alphas": np.vstack(lambda_alphas),
+            "models": lambda_models,
+        }
+    return all_results
+
+
+def _select_best_alpha_net(all_results):
+    best_lambda = None
+    best_run_idx = None
+    best_loss = float("inf")
+    for lambda_reg, result_dict in all_results.items():
+        final_losses = result_dict["all_losses"][:, -1]
+        run_idx = int(np.argmin(final_losses))
+        run_loss = float(final_losses[run_idx])
+        if run_loss < best_loss:
+            best_loss = run_loss
+            best_lambda = lambda_reg
+            best_run_idx = run_idx
+    return best_lambda, best_run_idx, all_results[best_lambda]["models"][best_run_idx]
+
+
+def _predict_alphanet(
+    estimator,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    alpha: float,
+    lambdas: tuple[float, ...] = (10.0, 20.0, 50.0),
+    num_runs: int = 3,
+    epochs: int = 50,
+    batch_size: int = 32,
+    learning_rate: float = 1e-3,
+    alpha_clip: float = 1e-3,
+    seed: int = 42,
+    device: str = "cpu",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """AlphaNet / Adaptive Conformal Prediction (ACP)."""
+    X_fit, X_calib, y_fit, y_calib = train_test_split(
+        X_train, y_train, test_size=0.35, random_state=seed
+    )
+    if len(X_calib) < 30:
+        import warnings
+        msg = f"Calibration dataset size ({len(X_calib)}) is too small (< 30) to support LOO training for AlphaNet/ACP. Falling back to empirical split conformal prediction."
+        warnings.warn(msg, UserWarning)
+        logging.warning(msg)
+        return _predict_mfcs_split(
+            estimator, X_train, y_train, X_test, alpha, calibration_size=0.35, random_state=seed
+        )
+
+    estimator.fit(X_fit, y_fit)
+    all_results = _train_alpha_net(
+        base_model=estimator,
+        X_calib=X_calib,
+        y_calib=y_calib,
+        lambdas=lambdas,
+        num_runs=num_runs,
+        epochs=epochs,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        alpha_clip=alpha_clip,
+        seed=seed,
+        device=device,
+    )
+    best_lambda, best_run_idx, alpha_net = _select_best_alpha_net(all_results)
+
+    calib_scores = np.abs(estimator.predict(X_calib) - y_calib)
+    test_feature = torch.tensor([[calib_scores.sum()]], dtype=torch.float32, device=device)
+    with torch.no_grad():
+        alpha_hat = float(torch.clamp(alpha_net(test_feature), min=1e-3, max=1.0 - 1e-3).item())
+
+    scores_tensor = torch.tensor(calib_scores, dtype=torch.float32, device=device)
+    interval_width = float(interval_size(scores_tensor, torch.tensor(alpha_hat, device=device)).item())
+
+    y_pred = estimator.predict(X_test).ravel()
+    y_lower = y_pred - 0.5 * interval_width
+    y_upper = y_pred + 0.5 * interval_width
+    return y_pred, y_lower, y_upper
+
+
+def _predict_normalized_cqr(
+    lower_estimator,
+    upper_estimator,
+    median_estimator,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    alpha: float,
+    fit_ratio: float = 0.65,
+    random_state: int = 42,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Normalized (Multiplicative) CQR as used in the notebooks."""
+    X_train_np = X_train.to_numpy() if hasattr(X_train, "to_numpy") else np.asarray(X_train)
+    y_train_np = y_train.to_numpy().ravel() if hasattr(y_train, "to_numpy") else np.asarray(y_train).ravel()
+    X_test_np = X_test.to_numpy() if hasattr(X_test, "to_numpy") else np.asarray(X_test)
+
+    X_fit, X_cal, y_fit, y_cal = train_test_split(
+        X_train_np, y_train_np, test_size=(1.0 - fit_ratio), random_state=random_state
+    )
+
+    lower_estimator.fit(X_fit, y_fit)
+    upper_estimator.fit(X_fit, y_fit)
+    median_estimator.fit(X_fit, y_fit)
+
+    cal_lower = lower_estimator.predict(X_cal).ravel()
+    cal_upper = upper_estimator.predict(X_cal).ravel()
+    cal_pred = median_estimator.predict(X_cal).ravel()
+
+    cal_U = np.maximum(cal_upper - cal_lower, np.finfo(float).eps)
+    cal_scores = np.abs(cal_pred - y_cal) / cal_U
+
+    n_cal = len(X_cal)
+    qhat = np.quantile(cal_scores, np.ceil((n_cal + 1) * (1.0 - alpha)) / n_cal)
+
+    val_lower = lower_estimator.predict(X_test_np).ravel()
+    val_upper = upper_estimator.predict(X_test_np).ravel()
+    val_pred = median_estimator.predict(X_test_np).ravel()
+    val_U = np.maximum(val_upper - val_lower, np.finfo(float).eps)
+
+    y_lower = val_pred - val_U * qhat
+    y_upper = val_pred + val_U * qhat
+    y_pred = val_pred
+
+    return y_pred, y_lower, y_upper
 
 
 # =============================================================================
@@ -351,6 +827,11 @@ def _run_advanced_method(
     n_bootstrap: int,
     calibration_size: float,
     random_state: int,
+    cv: Any = "split",
+    fit_ratio: float = 0.8,
+    K: int = 5,
+    gpd_threshold_quantile: float = 0.9,
+    device: str = "cpu",
 ) -> PhaseResult:
     """Run a single advanced conformal method across all models."""
     metrics_rows: list[dict[str, float | str]] = []
@@ -371,6 +852,7 @@ def _run_advanced_method(
 
         estimator = model_builder()
 
+        backend = method_name
         try:
             if method_name == "nexcp_split":
                 y_pred, y_lower, y_upper = _predict_nexcp_split(
@@ -406,7 +888,7 @@ def _run_advanced_method(
                 )
             elif method_name == "cvplus":
                 y_pred, y_lower, y_upper = _predict_puncc_cvplus(
-                    estimator, bundle.X_train, bundle.y_train, bundle.X_test, alpha
+                    estimator, bundle.X_train, bundle.y_train, bundle.X_test, alpha, K=K, random_state=random_state
                 )
             elif method_name == "cqr":
                 # CQR needs quantile models - build lower and upper
@@ -417,30 +899,109 @@ def _run_advanced_method(
                     model_id=model_id, phase="quantile", params=params, quantile=1 - alpha / 2
                 )
                 y_pred, y_lower, y_upper = _predict_puncc_cqr(
-                    lower_est, upper_est, bundle.X_train, bundle.y_train, bundle.X_test, alpha
+                    lower_est, upper_est, bundle.X_train, bundle.y_train, bundle.X_test, alpha, fit_ratio=fit_ratio, random_state=random_state
+                )
+            elif method_name in ("normalized_cqr", "ncqr"):
+                lower_est = model_registry.build_estimator(
+                    model_id=model_id, phase="quantile", params=params, quantile=alpha / 2
+                )
+                upper_est = model_registry.build_estimator(
+                    model_id=model_id, phase="quantile", params=params, quantile=1 - alpha / 2
+                )
+                median_est = model_registry.build_estimator(
+                    model_id=model_id, phase="quantile", params=params, quantile=0.5
+                )
+                y_pred, y_lower, y_upper = _predict_normalized_cqr(
+                    lower_est, upper_est, median_est, bundle.X_train, bundle.y_train, bundle.X_test, alpha, fit_ratio=fit_ratio, random_state=random_state
+                )
+            elif method_name == "saocp":
+                y_pred, y_lower, y_upper = _predict_saocp(
+                    estimator, X_train, y_train, X_test, y_test, alpha
+                )
+            elif method_name == "sf_ogd":
+                y_pred, y_lower, y_upper = _predict_sf_ogd(
+                    estimator, X_train, y_train, X_test, y_test, alpha
+                )
+            elif method_name == "online_cvplus":
+                y_pred, y_lower, y_upper = _predict_online_cv_plus(
+                    estimator, X_train, y_train, X_test, y_test, alpha
+                )
+            elif method_name == "online_jackknife_ab":
+                y_pred, y_lower, y_upper = _predict_online_jackknife_ab(
+                    model_builder, X_train, y_train, X_test, alpha, n_bootstrap, random_state
+                )
+            elif method_name == "cop":
+                y_pred, y_lower, y_upper = _predict_cop(
+                    estimator, X_train, y_train, X_test, y_test, alpha
+                )
+            elif method_name == "extreme":
+                y_pred, y_lower, y_upper = _predict_extreme(
+                    estimator, X_train, y_train, X_test, y_test, alpha, gpd_threshold_quantile, n_bootstrap
+                )
+            elif method_name in ("alphanet", "acp"):
+                y_pred, y_lower, y_upper = _predict_alphanet(
+                    estimator, X_train, y_train, X_test, alpha, seed=random_state, device=device
                 )
             else:
                 raise ValueError(f"Unknown advanced conformal method '{method_name}'")
 
         except Exception as e:
-            # Fallback to basic split conformal
+            backend = "manual_fallback"
+            import warnings
+            msg = f"Conformal advanced method '{method_name}' failed on model '{model_id}': {str(e)}. Falling back to manual Split Conformal."
+            warnings.warn(msg, UserWarning)
+            logging.warning(msg)
             y_pred, y_lower, y_upper = _predict_mfcs_split(
                 estimator, X_train, y_train, X_test, alpha, calibration_size, random_state
             )
 
+        adv_mapping = {
+            "nexcp_split": "NexCP-Split",
+            "nexcp_full": "NexCP-Full",
+            "nexcp_jackknife_ab": "NexCP-J+aB",
+            "nexcp_cv_plus": "NexCP-CV+",
+            "online_split": "Online-Split",
+            "faci": "FACI",
+            "mfcs_split": "MFCS-Split",
+            "mfcs_full": "MFCS-Full",
+            "cvplus": "CV+",
+            "cqr": "CQR",
+            "normalized_cqr": "Normalized-CQR",
+            "saocp": "SAOCP",
+            "sf_ogd": "SF-OGD",
+            "online_cvplus": "Online-CV+",
+            "online_jackknife_ab": "Online-J+aB",
+            "cop": "COP",
+            "extreme": "Extreme-CP",
+            "alphanet": "AlphaNet",
+        }
+        strat_name = adv_mapping.get(method_name.lower(), method_name)
+
+        y_true = np.asarray(y_test).ravel()
         pred_df = pd.DataFrame(
             {
-                "y_true": y_test,
+                "sample_index": np.arange(len(y_true)),
+                "strategy": strat_name,
+                "y_true": y_true,
                 "y_pred": y_pred,
+                "ymin": y_lower,
+                "ymax": y_upper,
+                "width": y_upper - y_lower,
+                "is_covered": ((y_true >= y_lower) & (y_true <= y_upper)).astype(int),
+                "residual": y_true - y_pred,
                 "y_lower": y_lower,
                 "y_upper": y_upper,
+                "backend": backend,
             }
         )
         predictions[model_id] = pred_df
 
-        row = {"model": model_id, "method": method_name, "alpha": alpha}
+        row = {"model": model_id, "method": method_name, "backend": backend, "alpha": alpha}
         row.update(regression_metrics(y_true=y_test, y_pred=y_pred))
         row.update(interval_metrics(y_true=y_test, y_lower=y_lower, y_upper=y_upper))
+        from .metrics import cwc, ssc
+        row["cwc"] = cwc(y_true=y_test, y_lower=y_lower, y_upper=y_upper, alpha=alpha)
+        row["ssc"] = ssc(y_true=y_test, y_pred=y_pred, y_lower=y_lower, y_upper=y_upper)
         metrics_rows.append(row)
 
     metrics_df = pd.DataFrame(metrics_rows)
@@ -475,6 +1036,14 @@ def run_conformal_advanced(
     - mfcs_full: Model-Free Conformal Selection (Full)
     - cvplus: PUNCC CV+ (Cross-Validation Plus)
     - cqr: PUNCC CQR (Conformalized Quantile Regression)
+    - normalized_cqr: Normalized (Multiplicative) CQR
+    - saocp: Semi-Adaptive Online CP
+    - sf_ogd: Scale-Free Online Gradient Descent
+    - online_cvplus: Online CV+
+    - online_jackknife_ab: Online Jackknife+ after Bootstrap
+    - cop: Conformal Optimistic Prediction
+    - extreme: Extreme CP via GPD tail fitting
+    - alphanet: AlphaNet Adaptive Conformal Prediction
 
     Args:
         data: Input data (DataFrame, CSV path, or dict with train/test).
@@ -486,9 +1055,14 @@ def run_conformal_advanced(
             - methods: List of methods to run (default: all)
             - decay: Decay factor for NexCP (default: 0.99)
             - n_folds: Number of folds for CV methods (default: 5)
-            - n_bootstrap: Bootstrap iterations (default: 50)
+            - n_bootstrap: Bootstrap iterations (default: 30)
             - calibration_size: Calibration set proportion (default: 0.2)
             - random_state: Random seed (default: 42)
+            - cv: cv strategy (default: "split")
+            - fit_ratio: fit ratio (default: 0.8)
+            - K: K parameter (default: 5)
+            - gpd_threshold_quantile: GPD threshold quantile (default: 0.9)
+            - device: device (default: "cpu")
         output_config: Output configuration.
         split_config: Train/test split configuration.
 
@@ -503,9 +1077,14 @@ def run_conformal_advanced(
     alpha = float(cfg.get("alpha", DEFAULT_ALPHA))
     decay = float(cfg.get("decay", 0.99))
     n_folds = int(cfg.get("n_folds", 5))
-    n_bootstrap = int(cfg.get("n_bootstrap", 50))
+    n_bootstrap = int(cfg.get("n_bootstrap", 30))
     calibration_size = float(cfg.get("calibration_size", 0.2))
     random_state = int(cfg.get("random_state", 42))
+    cv = cfg.get("cv", "split")
+    fit_ratio = float(cfg.get("fit_ratio", 0.8))
+    K = int(cfg.get("K", 5))
+    gpd_threshold_quantile = float(cfg.get("gpd_threshold_quantile", 0.9))
+    device = str(cfg.get("device", "cpu"))
 
     default_methods = [
         "nexcp_split",
@@ -517,6 +1096,15 @@ def run_conformal_advanced(
         "mfcs_split",
         "mfcs_full",
         "cvplus",
+        "cqr",
+        "normalized_cqr",
+        "saocp",
+        "sf_ogd",
+        "online_cvplus",
+        "online_jackknife_ab",
+        "cop",
+        "extreme",
+        "alphanet",
     ]
     methods = list(cfg.get("methods", default_methods))
 
@@ -543,6 +1131,11 @@ def run_conformal_advanced(
             n_bootstrap=n_bootstrap,
             calibration_size=calibration_size,
             random_state=random_state,
+            cv=cv,
+            fit_ratio=fit_ratio,
+            K=K,
+            gpd_threshold_quantile=gpd_threshold_quantile,
+            device=device,
         )
 
     result = ConformalResult(
@@ -569,7 +1162,13 @@ def run_conformal_advanced(
         if output_cfg.export_excel:
             result.artifacts.append(write_conformal_excel(result, excel_path))
             if output_cfg.embed_excel_charts and chart_result is not None and chart_result.images_by_sheet:
-                embed_images_in_excel(workbook_path=excel_path, images_by_sheet=chart_result.images_by_sheet)
+                redirected_images = {}
+                for sh_name, imgs in chart_result.images_by_sheet.items():
+                    if sh_name.startswith("m_"):
+                        redirected_images.setdefault(sh_name, []).extend(imgs)
+                    else:
+                        redirected_images.setdefault("all_pred_values", []).extend(imgs)
+                embed_images_in_excel(workbook_path=excel_path, images_by_sheet=redirected_images)
 
         if output_cfg.save_json and tuned_params:
             result.artifacts.append(write_json(tuned_params, output_dir / "conformal_advanced_tuned_params.json"))

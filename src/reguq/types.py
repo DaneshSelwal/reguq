@@ -14,6 +14,9 @@ class SplitConfig:
     test_size: float = 0.2
     shuffle: bool = False
     random_state: int = 42
+    scale_features: bool = False
+    scale_targets: bool = False
+    val_size: float = 0.0
 
 
 @dataclass
@@ -45,6 +48,8 @@ class DataBundle:
     X_test: pd.DataFrame
     y_test: pd.Series
     feature_columns: list[str]
+    X_val: pd.DataFrame | None = None
+    y_val: pd.Series | None = None
 
 
 @dataclass

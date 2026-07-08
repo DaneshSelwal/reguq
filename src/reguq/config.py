@@ -33,6 +33,9 @@ def coerce_split_config(value: Mapping[str, Any] | SplitConfig | None) -> SplitC
         test_size=float(cfg.get("test_size", 0.2)),
         shuffle=bool(cfg.get("shuffle", False)),
         random_state=int(cfg.get("random_state", 42)),
+        scale_features=bool(cfg.get("scale_features", False)),
+        scale_targets=bool(cfg.get("scale_targets", False)),
+        val_size=float(cfg.get("val_size", 0.0)),
     )
 
 

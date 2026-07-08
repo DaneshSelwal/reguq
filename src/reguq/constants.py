@@ -5,6 +5,7 @@ from __future__ import annotations
 PHASE_TUNING = "tuning"
 PHASE_QUANTILE = "quantile"
 PHASE_PROBABILISTIC = "probabilistic"
+PHASE_PROBABILISTIC_ADVANCED = "probabilistic_advanced"
 PHASE_CONFORMAL_STANDARD = "conformal_standard"
 PHASE_CONFORMAL_ADVANCED = "conformal_advanced"
 PHASE_EXPLAINABILITY = "explainability"
@@ -13,6 +14,7 @@ ALL_PHASES = (
     PHASE_TUNING,
     PHASE_QUANTILE,
     PHASE_PROBABILISTIC,
+    PHASE_PROBABILISTIC_ADVANCED,
     PHASE_CONFORMAL_STANDARD,
     PHASE_CONFORMAL_ADVANCED,
     PHASE_EXPLAINABILITY,
@@ -28,6 +30,7 @@ CORE_MODELS = (
     "gradientboosting",
     "gpboost",
     "tabnet",
+    "hcm",
 )
 
 DEFAULT_QUANTILES = (0.05, 0.95)

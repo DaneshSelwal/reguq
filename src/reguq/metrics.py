@@ -42,6 +42,19 @@ def gaussian_crps(y_true: np.ndarray, mean: np.ndarray, std: np.ndarray) -> floa
     return float(np.mean(crps))
 
 
+def ssc(y_true: np.ndarray, y_pred: np.ndarray, y_lower: np.ndarray, y_upper: np.ndarray) -> float:
+    """Symmetric Scoring Criterion."""
+    return float(np.mean((y_true - y_pred) ** 2 + (y_upper - y_lower) ** 2))
+
+
+def cwc(y_true: np.ndarray, y_lower: np.ndarray, y_upper: np.ndarray, alpha: float) -> float:
+    """Coverage Width Criterion."""
+    coverage = np.mean((y_true >= y_lower) & (y_true <= y_upper))
+    width = np.mean(y_upper - y_lower)
+    penalty = 1.0 + (1.0 - coverage) if coverage < (1.0 - alpha) else 1.0
+    return float(width * penalty)
+
+
 def to_metrics_frame(rows: list[dict[str, float | str]]) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()

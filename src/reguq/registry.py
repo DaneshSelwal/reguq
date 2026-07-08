@@ -42,17 +42,22 @@ _MODEL_SPECS: dict[str, ModelSpec] = {
     "ngboost": ModelSpec(
         model_id="ngboost",
         display_name="NGBoost",
-        phases=frozenset({PHASE_TUNING, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
+        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
     ),
     "pgbm": ModelSpec(
         model_id="pgbm",
         display_name="PGBM",
-        phases=frozenset({PHASE_TUNING, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
+        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
+    ),
+    "histgradientboosting": ModelSpec(
+        model_id="histgradientboosting",
+        display_name="Hist Gradient Boosting",
+        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
     ),
     "randomforest": ModelSpec(
         model_id="randomforest",
         display_name="Random Forest",
-        phases=frozenset({PHASE_TUNING, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
+        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
     ),
     "gradientboosting": ModelSpec(
         model_id="gradientboosting",
@@ -67,7 +72,12 @@ _MODEL_SPECS: dict[str, ModelSpec] = {
     "tabnet": ModelSpec(
         model_id="tabnet",
         display_name="TabNet",
-        phases=frozenset({PHASE_TUNING, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
+        phases=frozenset({PHASE_TUNING, PHASE_QUANTILE, PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
+    ),
+    "hcm": ModelSpec(
+        model_id="hcm",
+        display_name="Hyperspherical Confidence Mapping",
+        phases=frozenset({PHASE_PROBABILISTIC, PHASE_CONFORMAL_STANDARD, PHASE_CONFORMAL_ADVANCED, PHASE_EXPLAINABILITY}),
     ),
 }
 
@@ -127,6 +137,12 @@ def _load_pgbm():
     return HistGradientBoostingRegressor
 
 
+def _load_histgradientboosting():
+    from sklearn.ensemble import HistGradientBoostingRegressor
+
+    return HistGradientBoostingRegressor
+
+
 def _load_randomforest():
     from sklearn.ensemble import RandomForestRegressor
 
@@ -167,6 +183,8 @@ def _point_defaults(model_id: str) -> dict[str, Any]:
         return {"random_state": 42, "n_estimators": 400, "verbose": False}
     if model_id == "pgbm":
         return {"random_state": 42, "max_iter": 300}
+    if model_id == "histgradientboosting":
+        return {"random_state": 42, "max_iter": 300}
     if model_id == "randomforest":
         return {"random_state": 42, "n_estimators": 300, "n_jobs": -1}
     if model_id == "gradientboosting":
@@ -175,7 +193,163 @@ def _point_defaults(model_id: str) -> dict[str, Any]:
         return {"random_state": 42, "n_estimators": 300, "verbose": 0}
     if model_id == "tabnet":
         return {"seed": 42, "verbose": 0}
+    if model_id == "hcm":
+        return {
+            "lr": 1e-3,
+            "epochs": 200,
+            "batch_size": 64,
+            "patience": 15,
+            "weight_decay": 1e-5,
+            "seed": 42,
+            "device": "cpu",
+        }
     raise ValueError(f"Unsupported model '{model_id}'")
+
+
+class NGBoostQuantileWrapper:
+    def __init__(self, quantile: float, **params):
+        self.quantile = quantile
+        self.params = params
+        self.model = None
+
+    def fit(self, X, y):
+        from ngboost import NGBRegressor
+        from ngboost.distns import Normal
+        from ngboost.scores import LogScore
+        import numpy as np
+        X_ = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
+        y_ = y.to_numpy() if hasattr(y, "to_numpy") else np.asarray(y)
+
+        fit_params = dict(self.params)
+        fit_params.setdefault("Dist", Normal)
+        fit_params.setdefault("Score", LogScore)
+        self.model = NGBRegressor(**fit_params)
+        self.model.fit(X_, y_)
+        return self
+
+    def predict(self, X):
+        from scipy.stats import norm
+        import numpy as np
+        X_ = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
+        dist = self.model.pred_dist(X_)
+        mu = np.asarray(dist.loc).ravel()
+        sigma = np.asarray(dist.scale).ravel()
+        z = norm.ppf(self.quantile)
+        return mu + z * sigma
+
+
+class TabNetQuantileWrapper:
+    def __init__(self, quantile: float, **params):
+        self.quantile = quantile
+        self.params = params
+        self.model = None
+
+    def fit(self, X, y):
+        from pytorch_tabnet.tab_model import TabNetRegressor
+        import torch
+        import numpy as np
+        X_ = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
+        y_ = y.to_numpy() if hasattr(y, "to_numpy") else np.asarray(y)
+        if len(y_.shape) == 1:
+            y_ = y_.reshape(-1, 1)
+
+        def quantile_loss(q):
+            def loss(y_pred, y_true):
+                error = y_true - y_pred
+                return torch.mean(torch.maximum(q * error, (q - 1) * error))
+            return loss
+
+        fit_params = dict(self.params)
+        self.model = TabNetRegressor(**fit_params)
+        self.model.fit(
+            X_,
+            y_,
+            eval_set=[(X_, y_)],
+            loss_fn=quantile_loss(self.quantile),
+            max_epochs=200,
+            patience=30,
+            batch_size=1024,
+            virtual_batch_size=128,
+            num_workers=0,
+            drop_last=False
+        )
+        return self
+
+    def predict(self, X):
+        import numpy as np
+        X_ = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
+        return self.model.predict(X_).ravel()
+
+
+class RandomForestQuantileWrapper:
+    def __init__(self, quantile: float, **params):
+        self.quantile = quantile
+        self.params = params
+        self.model = None
+
+    def fit(self, X, y):
+        from sklearn.ensemble import RandomForestRegressor
+        import numpy as np
+        X_ = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
+        y_ = y.to_numpy() if hasattr(y, "to_numpy") else np.asarray(y)
+
+        self.model = RandomForestRegressor(**self.params)
+        self.model.fit(X_, y_)
+        return self
+
+    def predict(self, X):
+        import numpy as np
+        X_ = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
+        preds = np.stack([tree.predict(X_) for tree in self.model.estimators_], axis=0)
+        return np.quantile(preds, self.quantile, axis=0)
+
+
+class PGBMQuantileWrapper:
+    def __init__(self, quantile: float, **params):
+        self.quantile = quantile
+        self.params = params
+        self.model = None
+
+    def fit(self, X, y):
+        from pgbm import PGBM
+        import torch
+        import numpy as np
+        X_ = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
+        y_ = y.to_numpy() if hasattr(y, "to_numpy") else np.asarray(y)
+
+        fit_params = dict(self.params)
+        for key in ['Dist', 'Score']:
+            fit_params.pop(key, None)
+
+        def mseloss_objective(yhat, y_t, sample_weight=None):
+            if not torch.is_tensor(yhat):
+                yhat = torch.from_numpy(np.array(yhat)).float()
+            if not torch.is_tensor(y_t):
+                y_t = torch.from_numpy(np.array(y_t)).float()
+            return yhat - y_t, torch.ones_like(yhat)
+
+        def rmseloss_metric(yhat, y_t, sample_weight=None):
+            if not torch.is_tensor(yhat):
+                yhat = torch.from_numpy(np.array(yhat)).float()
+            if not torch.is_tensor(y_t):
+                y_t = torch.from_numpy(np.array(y_t)).float()
+            return torch.sqrt(torch.mean((yhat - y_t) ** 2))
+
+        self.model = PGBM()
+        self.model.train(
+            train_set=(X_, y_),
+            objective=mseloss_objective,
+            metric=rmseloss_metric,
+            params=fit_params
+        )
+        return self
+
+    def predict(self, X):
+        import numpy as np
+        X_ = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
+        pred_dist = self.model.predict_dist(X_)
+        pred_dist_np = pred_dist.cpu().numpy() if hasattr(pred_dist, "cpu") else np.asarray(pred_dist)
+        return np.quantile(pred_dist_np, self.quantile, axis=0)
 
 
 def build_estimator(
@@ -185,6 +359,23 @@ def build_estimator(
     quantile: float | None = None,
 ):
     params = dict(params or {})
+
+    # Raise error if model doesn't support quantile regression but requested
+    if phase == PHASE_QUANTILE and model_id not in (
+        "lightgbm",
+        "xgboost",
+        "catboost",
+        "gradientboosting",
+        "gpboost",
+        "histgradientboosting",
+        "pgbm",
+        "ngboost",
+        "tabnet",
+        "randomforest",
+    ):
+        raise ValueError(
+            f"Model '{model_id}' does not support quantile regression (PHASE_QUANTILE)."
+        )
 
     if model_id == "lightgbm":
         LGBMRegressor = _load_lightgbm()
@@ -211,23 +402,37 @@ def build_estimator(
         return CatBoostRegressor(**base)
 
     if model_id == "ngboost":
-        NGBRegressor, Normal, LogScore = _load_ngboost()
         base = _point_defaults(model_id)
         base.update(params)
+        if phase == PHASE_QUANTILE:
+            return NGBoostQuantileWrapper(quantile=quantile, **base)
+        NGBRegressor, Normal, LogScore = _load_ngboost()
         base.setdefault("Dist", Normal)
         base.setdefault("Score", LogScore)
         return NGBRegressor(**base)
 
     if model_id == "pgbm":
-        PGBMRegressor = _load_pgbm()
         base = _point_defaults(model_id)
         base.update(params)
+        if phase == PHASE_QUANTILE:
+            return PGBMQuantileWrapper(quantile=quantile, **base)
+        PGBMRegressor = _load_pgbm()
         return PGBMRegressor(**base)
 
+    if model_id == "histgradientboosting":
+        HistGradientBoostingRegressor = _load_histgradientboosting()
+        base = _point_defaults(model_id)
+        if phase == PHASE_QUANTILE:
+            base.update({"loss": "quantile", "quantile": quantile})
+        base.update(params)
+        return HistGradientBoostingRegressor(**base)
+
     if model_id == "randomforest":
-        RandomForestRegressor = _load_randomforest()
         base = _point_defaults(model_id)
         base.update(params)
+        if phase == PHASE_QUANTILE:
+            return RandomForestQuantileWrapper(quantile=quantile, **base)
+        RandomForestRegressor = _load_randomforest()
         return RandomForestRegressor(**base)
 
     if model_id == "gradientboosting":
@@ -247,10 +452,18 @@ def build_estimator(
         return GPBoostRegressor(**base)
 
     if model_id == "tabnet":
-        TabNetRegressor = _load_tabnet()
         base = _point_defaults(model_id)
         base.update(params)
+        if phase == PHASE_QUANTILE:
+            return TabNetQuantileWrapper(quantile=quantile, **base)
+        TabNetRegressor = _load_tabnet()
         return TabNetRegressor(**base)
+
+    if model_id == "hcm":
+        from .probabilistic_advanced import HCMRegressor
+        base = _point_defaults(model_id)
+        base.update(params)
+        return HCMRegressor(**base)
 
     raise ValueError(f"Unsupported model '{model_id}'")
 
@@ -330,5 +543,10 @@ def suggest_hyperparameters(trial: Any, model_id: str) -> dict[str, Any]:
             "n_steps": trial.suggest_int("n_steps", 3, 10),
             "gamma": trial.suggest_float("gamma", 1.0, 2.0),
             "lambda_sparse": trial.suggest_float("lambda_sparse", 1e-6, 1e-2, log=True),
+        }
+    if model_id == "hcm":
+        return {
+            "lr": trial.suggest_float("lr", 1e-4, 1e-2, log=True),
+            "epochs": trial.suggest_int("epochs", 50, 300),
         }
     raise ValueError(f"No search space configured for model '{model_id}'")

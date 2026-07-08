@@ -9,7 +9,7 @@ from scipy.stats import norm
 from sklearn.base import clone
 
 from .base import BaseUQRegressor
-from ..probabilistic_advanced import CARDRegressor, IBUGRegressor, TreeffuserWrapper
+from ..probabilistic_advanced import CARDRegressor, IBUGRegressor, TreeffuserWrapper, HCMRegressor
 
 
 class ProbabilisticRegressor(BaseUQRegressor):
@@ -19,6 +19,7 @@ class ProbabilisticRegressor(BaseUQRegressor):
         - 'card': Classification And Regression Diffusion
         - 'ibug': Instance-Based Uncertainty using Gradient Boosting
         - 'treeffuser': Treeffuser diffusion models
+        - 'hcm': Hyperspherical Confidence Mapping
     """
     
     def __init__(
@@ -65,6 +66,11 @@ class ProbabilisticRegressor(BaseUQRegressor):
         elif self.method == "treeffuser":
             base.fit(X, y) # Treeffuser wrapper doesn't use base_model for predictions but stores it.
             self.wrapper_ = TreeffuserWrapper(base, self.n_samples)
+        elif self.method == "hcm":
+            self.wrapper_ = HCMRegressor(
+                epochs=self.epochs,
+                device=self.device,
+            )
         else:
             raise ValueError(f"Unknown probabilistic method: {self.method}")
             

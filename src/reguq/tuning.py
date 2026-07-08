@@ -51,11 +51,62 @@ def tune_single_model(
         scores = cross_val_score(estimator, X_train, y_train, cv=cv, scoring=scoring, n_jobs=1)
         return float(np.mean(scores))
 
-    study = optuna.create_study(
-        direction="maximize",
-        sampler=optuna.samplers.TPESampler(seed=random_state),
-    )
-    study.optimize(objective, n_trials=n_trials, timeout=timeout)
+    # Resolve Sampler
+    sampler_name = str(tuning_config.get("sampler", "tpe")).lower()
+    if sampler_name in ("autosampler", "auto_sampler"):
+        try:
+            import optunahub
+            sampler = optunahub.load_module("samplers/auto_sampler").AutoSampler()
+        except Exception:
+            sampler = optuna.samplers.TPESampler(seed=random_state)
+    else:
+        sampler = optuna.samplers.TPESampler(seed=random_state)
+
+    # Resolve Pruner
+    pruner_name = str(tuning_config.get("pruner", "nop")).lower()
+    if pruner_name == "median":
+        pruner = optuna.pruners.MedianPruner()
+    elif pruner_name == "patient":
+        pruner = optuna.pruners.PatientPruner(optuna.pruners.MedianPruner(), patience=3)
+    elif pruner_name == "percentile":
+        pruner = optuna.pruners.PercentilePruner(25.0)
+    elif pruner_name == "halving":
+        pruner = optuna.pruners.SuccessiveHalvingPruner()
+    elif pruner_name == "hyperband":
+        pruner = optuna.pruners.HyperbandPruner()
+    elif pruner_name == "threshold":
+        pruner = optuna.pruners.ThresholdPruner(lower=0.1)
+    elif pruner_name == "wilcoxon":
+        pruner = optuna.pruners.WilcoxonPruner()
+    else:
+        pruner = optuna.pruners.NopPruner()
+
+    import joblib
+    from pathlib import Path
+
+    checkpoint_path = tuning_config.get("checkpoint_path", f"optuna_study_{model_id}.pkl")
+    study_loaded = False
+    if Path(checkpoint_path).exists():
+        try:
+            study = joblib.load(checkpoint_path)
+            study_loaded = True
+        except Exception:
+            pass
+
+    if not study_loaded:
+        study = optuna.create_study(
+            direction="maximize",
+            sampler=sampler,
+            pruner=pruner,
+        )
+
+    def save_callback(study, trial):
+        try:
+            joblib.dump(study, checkpoint_path)
+        except Exception:
+            pass
+
+    study.optimize(objective, n_trials=n_trials, timeout=timeout, callbacks=[save_callback])
 
     return dict(study.best_params), float(study.best_value)
 

@@ -93,3 +93,39 @@ def test_inline_plot_path_does_not_break(synthetic_paths, patched_estimators, mo
     assert not result.metrics.empty
     assert any(calls)
     assert not any(p.suffix == ".png" for p in result.artifacts)
+
+
+def test_alphanet_calibration_size_check_fallback(synthetic_paths, patched_estimators):
+    import pandas as pd
+    import numpy as np
+    import pytest
+    from reguq.conformal_advanced import run_conformal_advanced
+    
+    # Create a small dataset with 15 samples
+    rng = np.random.default_rng(42)
+    train_df = pd.DataFrame({
+        "f1": rng.normal(0, 1, 15),
+        "f2": rng.normal(0, 1, 15),
+        "target": rng.normal(0, 1, 15)
+    })
+    test_df = pd.DataFrame({
+        "f1": rng.normal(0, 1, 5),
+        "f2": rng.normal(0, 1, 5),
+        "target": rng.normal(0, 1, 5)
+    })
+    
+    with pytest.warns(UserWarning, match="Calibration dataset size .* is too small"):
+        result = run_conformal_advanced(
+            data={"train_df": train_df, "test_df": test_df},
+            target_col="target",
+            models=["gradientboosting"],
+            params_source={"mode": "defaults"},
+            conformal_config={"alpha": 0.1, "methods": ["alphanet"]},
+        )
+        
+    assert "alphanet" in result.methods
+    pred_df = result.methods["alphanet"].predictions["gradientboosting"]
+    assert "ymin" in pred_df.columns
+    assert "ymax" in pred_df.columns
+    assert np.all(pred_df["ymin"] <= pred_df["ymax"])
+
