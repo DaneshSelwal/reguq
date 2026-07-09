@@ -28,6 +28,23 @@ def run_quantile(
     split_config: SplitConfig | Mapping[str, Any] | None = None,
     quantiles: tuple[float, float] = DEFAULT_QUANTILES,
 ) -> PhaseResult:
+    """Run quantile regression phase.
+
+    Trains separate lower and upper quantile estimators for each model, makes predictions,
+    measures prediction interval metrics (coverage, width), and exports reports/plots.
+
+    Args:
+        data: The input dataset, typically a pandas DataFrame, path to a file, or prepared data.
+        target_col: The name of the target column in the dataset.
+        models: A list or tuple of model identifiers to run. If None, uses default models.
+        params_source: Source of model hyperparameters. Can be a dict or a file path.
+        output_config: Directory/export settings, either an OutputConfig or a dictionary.
+        split_config: Data splitting configuration, either a SplitConfig or a dictionary.
+        quantiles: Tuple of (lower_quantile, upper_quantile), default is (0.05, 0.95).
+
+    Returns:
+        A PhaseResult object containing the evaluation metrics, predictions, and artifact paths.
+    """
     bundle = prepare_data_bundle(data=data, target_col=target_col, split_config=split_config)
     model_ids = model_registry.validate_models(models=models, phase=PHASE_QUANTILE)
     output_cfg = coerce_output_config(output_config)

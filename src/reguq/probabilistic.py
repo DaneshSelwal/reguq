@@ -82,6 +82,24 @@ def run_probabilistic(
     split_config: SplitConfig | Mapping[str, Any] | None = None,
     alpha: float = DEFAULT_ALPHA,
 ) -> PhaseResult:
+    """Run probabilistic regression phase.
+
+    Trains probabilistic estimators (e.g., NGBoost, PGBM) that output distribution parameters,
+    computes mean and standard deviation, derives prediction intervals based on the normal
+    distribution assumption, and exports reports and plots.
+
+    Args:
+        data: The input dataset, typically a pandas DataFrame, path to a file, or prepared data.
+        target_col: The name of the target column in the dataset.
+        models: A list or tuple of model identifiers to run. If None, uses default models.
+        params_source: Source of model hyperparameters. Can be a dict or a file path.
+        output_config: Directory/export settings, either an OutputConfig or a dictionary.
+        split_config: Data splitting configuration, either a SplitConfig or a dictionary.
+        alpha: Miscoverage rate for deriving prediction intervals (default: 0.1).
+
+    Returns:
+        A PhaseResult object containing the evaluation metrics, predictions, and artifact paths.
+    """
     bundle = prepare_data_bundle(data=data, target_col=target_col, split_config=split_config)
     model_ids = model_registry.validate_models(models=models, phase=PHASE_PROBABILISTIC)
     output_cfg = coerce_output_config(output_config)

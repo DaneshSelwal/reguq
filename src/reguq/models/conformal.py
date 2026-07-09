@@ -87,6 +87,18 @@ class ConformalRegressor(BaseUQRegressor):
         self.X_train_ = None
         self.y_train_ = None
 
+    def _make_quantile_estimator(self, estimator: Any, q: float) -> Any:
+        """Clone estimator and set its quantile parameter if supported."""
+        cloned = clone(estimator)
+        valid_params = ["alpha", "quantile", "q"]
+        if hasattr(cloned, "get_params"):
+            params = cloned.get_params()
+            for p in valid_params:
+                if p in params:
+                    cloned.set_params(**{p: q})
+                    break
+        return cloned
+
     def fit(self, X: np.ndarray | pd.DataFrame, y: np.ndarray | pd.Series) -> ConformalRegressor:
         """Fit the underlying model and prepare for conformal prediction.
         
@@ -224,8 +236,11 @@ class ConformalRegressor(BaseUQRegressor):
                     clone(self.base_estimator), self.X_train_, self.y_train_, X_test, alpha, seed=self.random_state
                 )
             elif m == "normalized_cqr":
+                lower_est = self._make_quantile_estimator(self.base_estimator, alpha / 2.0)
+                upper_est = self._make_quantile_estimator(self.base_estimator, 1.0 - alpha / 2.0)
+                median_est = self._make_quantile_estimator(self.base_estimator, 0.5)
                 y_pred, y_lower, y_upper = _predict_normalized_cqr(
-                    clone(self.base_estimator), clone(self.base_estimator), clone(self.base_estimator), pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), alpha, fit_ratio=self.fit_ratio, random_state=self.random_state
+                    lower_est, upper_est, median_est, pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), alpha, fit_ratio=self.fit_ratio, random_state=self.random_state
                 )
             elif m == "mfcs_split":
                 y_pred, y_lower, y_upper = _predict_mfcs_split(
@@ -240,8 +255,10 @@ class ConformalRegressor(BaseUQRegressor):
                     clone(self.base_estimator), pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), alpha, K=self.K, random_state=self.random_state
                 )
             elif m == "cqr":
+                lower_est = self._make_quantile_estimator(self.base_estimator, alpha / 2.0)
+                upper_est = self._make_quantile_estimator(self.base_estimator, 1.0 - alpha / 2.0)
                 y_pred, y_lower, y_upper = _predict_puncc_cqr(
-                    clone(self.base_estimator), clone(self.base_estimator), pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), alpha, fit_ratio=self.fit_ratio, random_state=self.random_state
+                    lower_est, upper_est, pd.DataFrame(self.X_train_), pd.Series(self.y_train_), pd.DataFrame(X_test), alpha, fit_ratio=self.fit_ratio, random_state=self.random_state
                 )
             else:
                 raise ValueError(f"Unknown conformal method: {m}")

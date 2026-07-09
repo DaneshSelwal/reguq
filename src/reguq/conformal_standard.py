@@ -247,6 +247,33 @@ def run_conformal_standard(
     output_config: OutputConfig | Mapping[str, Any] | None = None,
     split_config: SplitConfig | Mapping[str, Any] | None = None,
 ) -> ConformalResult:
+    """Run standard conformal prediction using MAPIE and/or PUNCC.
+
+    This function performs standard conformal prediction (Split Conformal Prediction,
+    CV+, Jackknife+ after Bootstrap) on the provided dataset for a set of models.
+    It prepares the data, resolves model parameters, fits the models, calibrates the
+    intervals, and optionally exports metrics, predictions, and plots to files.
+
+    Args:
+        data: The input dataset, typically a pandas DataFrame, path to a file, or prepared data.
+        target_col: The name of the target column in the dataset.
+        models: A list or tuple of model identifiers to run. If None, uses default models.
+        params_source: Source of model hyperparameters. Can be a dict or a file path.
+        conformal_config: Configuration dict for conformal prediction. Key options include:
+            - \"alpha\": Miscoverage rate (default: 0.1).
+            - \"methods\": List of conformal methods to use (e.g., [\"mapie\", \"puncc\"]).
+            - \"mapie_method\": MAPIE strategy (e.g., \"plus\", \"minmax\").
+            - \"calibration_size\": Size of the calibration set (default: 0.2).
+            - \"random_state\": Random seed for reproducibility.
+            - \"cv\": Cross-validation scheme or \"split\".
+            - \"fit_ratio\": Split ratio for PUNCC calibration (default: 0.8).
+            - \"K\": Number of folds for CV+ (default: 5).
+        output_config: Directory/export settings, either an OutputConfig or a dictionary.
+        split_config: Data splitting configuration, either a SplitConfig or a dictionary.
+
+    Returns:
+        A ConformalResult object containing the evaluation metrics, predictions, and artifact paths.
+    """
     bundle = prepare_data_bundle(data=data, target_col=target_col, split_config=split_config)
     model_ids = model_registry.validate_models(models=models, phase=PHASE_CONFORMAL_STANDARD)
     output_cfg = coerce_output_config(output_config)

@@ -119,6 +119,23 @@ def run_tuning(
     output_config: OutputConfig | Mapping[str, Any] | None = None,
     split_config: SplitConfig | Mapping[str, Any] | None = None,
 ) -> TuningResult:
+    """Run hyperparameter tuning phase.
+
+    Tunes model hyperparameters using Optuna (TPE Sampler) over defined search spaces,
+    evaluates using cross-validation, saves the best parameters, fits the best estimator
+    on training data, generates predictions on test data, and exports results.
+
+    Args:
+        data: The input dataset, typically a pandas DataFrame, path to a file, or prepared data.
+        target_col: The name of the target column in the dataset.
+        models: A list or tuple of model identifiers to run. If None, uses default models.
+        tuning_config: Configuration dict for Optuna tuning (e.g., n_trials, metric).
+        output_config: Directory/export settings, either an OutputConfig or a dictionary.
+        split_config: Data splitting configuration, either a SplitConfig or a dictionary.
+
+    Returns:
+        A TuningResult object containing best hyperparameters, CV scores, and predictions.
+    """
     bundle = prepare_data_bundle(data=data, target_col=target_col, split_config=split_config)
     model_ids = model_registry.validate_models(models, phase=PHASE_TUNING)
     output_cfg = coerce_output_config(output_config)

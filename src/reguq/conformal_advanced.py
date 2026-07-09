@@ -26,7 +26,7 @@ from .types import ConformalResult, OutputConfig, PhaseResult, SplitConfig
 import reguq.registry as model_registry
 
 
-def _to_numpy(arr):
+def _to_numpy(arr: Any) -> np.ndarray:
     """Convert to numpy array safely."""
     if hasattr(arr, "to_numpy"):
         return arr.to_numpy().ravel()
@@ -60,14 +60,14 @@ def _extract_interval_bounds(intervals: Any) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _predict_puncc_cvplus(
-    estimator,
+    estimator: Any,
     X_train: pd.DataFrame,
     y_train: pd.Series,
     X_test: pd.DataFrame,
     alpha: float,
     K: int = 5,
     random_state: int = 42,
-):
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """PUNCC CV+ (Cross-Validation Plus) conformal prediction."""
     from deel.puncc.api.prediction import BasePredictor
     from deel.puncc.regression import CVPlus
@@ -90,15 +90,15 @@ def _predict_puncc_cvplus(
 
 
 def _predict_puncc_cqr(
-    lower_estimator,
-    upper_estimator,
+    lower_estimator: Any,
+    upper_estimator: Any,
     X_train: pd.DataFrame,
     y_train: pd.Series,
     X_test: pd.DataFrame,
     alpha: float,
     fit_ratio: float = 0.8,
     random_state: int = 42,
-):
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """PUNCC CQR (Conformalized Quantile Regression) conformal prediction."""
     from deel.puncc.api.prediction import BasePredictor
     from deel.puncc.regression import CQR
@@ -132,7 +132,7 @@ def _predict_puncc_cqr(
 
 
 def _predict_nexcp_split(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -154,7 +154,7 @@ def _predict_nexcp_split(
 
 
 def _predict_nexcp_full(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -174,7 +174,7 @@ def _predict_nexcp_full(
 
 
 def _predict_nexcp_jackknife_ab(
-    model_builder,
+    model_builder: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -205,7 +205,7 @@ def _predict_nexcp_jackknife_ab(
 
 
 def _predict_nexcp_cv_plus(
-    model_builder,
+    model_builder: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -240,7 +240,7 @@ def _predict_nexcp_cv_plus(
 
 
 def _predict_online_split(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -260,7 +260,7 @@ def _predict_online_split(
 
 
 def _predict_faci(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -307,7 +307,7 @@ def _predict_faci(
 
 
 def _predict_saocp(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -344,7 +344,7 @@ def _predict_saocp(
 
 
 def _predict_sf_ogd(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -382,7 +382,7 @@ def _predict_sf_ogd(
 
 
 def _predict_online_cv_plus(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -415,7 +415,7 @@ def _predict_online_cv_plus(
 
 
 def _predict_online_jackknife_ab(
-    model_builder,
+    model_builder: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -443,7 +443,7 @@ def _predict_online_jackknife_ab(
 
 
 def _predict_cop(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -494,7 +494,7 @@ def _predict_cop(
 
 
 def _predict_extreme(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -550,19 +550,19 @@ class AlphaNet(nn.Module):
         return self.net(x).squeeze(-1)
 
 
-def interval_size(scores, alpha_val, eps=1e-6):
+def interval_size(scores: torch.Tensor, alpha_val: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     n = scores.numel()
     denominator = torch.clamp(alpha_val * (n + 1) - 1.0, min=eps)
     return 2.0 * scores.sum() / denominator
 
 
-def _compute_scores_without_index(base_model, X_calib, y_calib, holdout_idx):
+def _compute_scores_without_index(base_model: Any, X_calib: np.ndarray, y_calib: np.ndarray, holdout_idx: int) -> np.ndarray:
     loo_X = np.delete(X_calib, holdout_idx, axis=0)
     loo_y = np.delete(y_calib, holdout_idx, axis=0)
     return np.abs(base_model.predict(loo_X) - loo_y)
 
 
-def _build_loo_feature_matrix(base_model, X_calib, y_calib):
+def _build_loo_feature_matrix(base_model: Any, X_calib: np.ndarray, y_calib: np.ndarray) -> torch.Tensor:
     rows = []
     for idx in range(len(X_calib)):
         scores = _compute_scores_without_index(base_model, X_calib, y_calib, idx)
@@ -571,18 +571,18 @@ def _build_loo_feature_matrix(base_model, X_calib, y_calib):
 
 
 def _train_alpha_net(
-    base_model,
-    X_calib,
-    y_calib,
-    lambdas=(10.0, 20.0, 50.0),
-    num_runs=3,
-    epochs=50,
-    batch_size=32,
-    learning_rate=1e-3,
-    alpha_clip=1e-3,
-    seed=42,
-    device="cpu",
-):
+    base_model: Any,
+    X_calib: np.ndarray,
+    y_calib: np.ndarray,
+    lambdas: tuple[float, ...] = (10.0, 20.0, 50.0),
+    num_runs: int = 3,
+    epochs: int = 50,
+    batch_size: int = 32,
+    learning_rate: float = 1e-3,
+    alpha_clip: float = 1e-3,
+    seed: int = 42,
+    device: str = "cpu",
+) -> dict[float, dict[str, Any]]:
     X_train_alpha = _build_loo_feature_matrix(base_model, X_calib, y_calib)
     all_results = {}
     for lambda_reg in lambdas:
@@ -641,7 +641,7 @@ def _train_alpha_net(
     return all_results
 
 
-def _select_best_alpha_net(all_results):
+def _select_best_alpha_net(all_results: dict[float, dict[str, Any]]) -> tuple[float, int, nn.Module]:
     best_lambda = None
     best_run_idx = None
     best_loss = float("inf")
@@ -657,7 +657,7 @@ def _select_best_alpha_net(all_results):
 
 
 def _predict_alphanet(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -715,9 +715,9 @@ def _predict_alphanet(
 
 
 def _predict_normalized_cqr(
-    lower_estimator,
-    upper_estimator,
-    median_estimator,
+    lower_estimator: Any,
+    upper_estimator: Any,
+    median_estimator: Any,
     X_train: pd.DataFrame,
     y_train: pd.Series,
     X_test: pd.DataFrame,
@@ -766,7 +766,7 @@ def _predict_normalized_cqr(
 
 
 def _predict_mfcs_split(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -792,7 +792,7 @@ def _predict_mfcs_split(
 
 
 def _predict_mfcs_full(
-    estimator,
+    estimator: Any,
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_test: np.ndarray,
@@ -820,7 +820,7 @@ def _run_advanced_method(
     method_name: str,
     model_ids: list[str],
     model_params: dict[str, dict[str, Any]],
-    bundle,
+    bundle: Any,
     alpha: float,
     decay: float,
     n_folds: int,
@@ -1025,49 +1025,55 @@ def run_conformal_advanced(
 ) -> ConformalResult:
     """Run advanced conformal prediction methods.
 
+    This function performs various advanced conformal prediction algorithms including
+    non-exchangeable conformal prediction (NexCP), online/adaptive conformal inference,
+    model-free conformal selection, and standard/conformalized quantile regression.
+    It prepares the data split, trains the estimators, generates conformalized prediction
+    intervals, calculates metrics, and exports reports and plots.
+
     Supported methods:
-    - nexcp_split: NexCP Split with exponential weighting
-    - nexcp_full: NexCP Full conformal
-    - nexcp_jackknife_ab: NexCP Jackknife+ after Bootstrap
-    - nexcp_cv_plus: NexCP Cross-Validation Plus
-    - online_split: Online Split conformal
-    - faci: Fully Adaptive Conformal Inference
-    - mfcs_split: Model-Free Conformal Selection (Split)
-    - mfcs_full: Model-Free Conformal Selection (Full)
-    - cvplus: PUNCC CV+ (Cross-Validation Plus)
-    - cqr: PUNCC CQR (Conformalized Quantile Regression)
-    - normalized_cqr: Normalized (Multiplicative) CQR
-    - saocp: Semi-Adaptive Online CP
-    - sf_ogd: Scale-Free Online Gradient Descent
-    - online_cvplus: Online CV+
-    - online_jackknife_ab: Online Jackknife+ after Bootstrap
-    - cop: Conformal Optimistic Prediction
-    - extreme: Extreme CP via GPD tail fitting
-    - alphanet: AlphaNet Adaptive Conformal Prediction
+        - "nexcp_split": NexCP Split with exponential weighting.
+        - "nexcp_full": NexCP Full conformal prediction.
+        - "nexcp_jackknife_ab": NexCP Jackknife+ after Bootstrap.
+        - "nexcp_cv_plus": NexCP Cross-Validation Plus.
+        - "online_split": Online Split conformal prediction.
+        - "faci": Fully Adaptive Conformal Inference.
+        - "mfcs_split": Model-Free Conformal Selection (Split).
+        - "mfcs_full": Model-Free Conformal Selection (Full).
+        - "cvplus": PUNCC CV+ (Cross-Validation Plus).
+        - "cqr": PUNCC CQR (Conformalized Quantile Regression).
+        - "normalized_cqr": Normalized (Multiplicative) CQR.
+        - "saocp": Semi-Adaptive Online CP.
+        - "sf_ogd": Scale-Free Online Gradient Descent.
+        - "online_cvplus": Online CV+.
+        - "online_jackknife_ab": Online Jackknife+ after Bootstrap.
+        - "cop": Conformal Optimistic Prediction.
+        - "extreme": Extreme CP via GPD tail fitting.
+        - "alphanet": AlphaNet Adaptive Conformal Prediction.
 
     Args:
-        data: Input data (DataFrame, CSV path, or dict with train/test).
-        target_col: Name of the target column.
-        models: List of model IDs to use. Defaults to all supported models.
-        params_source: Source for model parameters.
-        conformal_config: Configuration dict with keys:
-            - alpha: Miscoverage rate (default: 0.1)
-            - methods: List of methods to run (default: all)
-            - decay: Decay factor for NexCP (default: 0.99)
-            - n_folds: Number of folds for CV methods (default: 5)
-            - n_bootstrap: Bootstrap iterations (default: 30)
-            - calibration_size: Calibration set proportion (default: 0.2)
-            - random_state: Random seed (default: 42)
-            - cv: cv strategy (default: "split")
-            - fit_ratio: fit ratio (default: 0.8)
-            - K: K parameter (default: 5)
-            - gpd_threshold_quantile: GPD threshold quantile (default: 0.9)
-            - device: device (default: "cpu")
-        output_config: Output configuration.
-        split_config: Train/test split configuration.
+        data: The input dataset, typically a pandas DataFrame, path to a file, or prepared data.
+        target_col: The name of the target column in the dataset.
+        models: A list or tuple of model identifiers to run. If None, uses default models.
+        params_source: Source of model hyperparameters. Can be a dict or a file path.
+        conformal_config: Configuration dict for conformal prediction. Key options include:
+            - "alpha": Miscoverage rate (default: 0.1).
+            - "methods": List of conformal methods to use.
+            - "decay": Decay factor for NexCP methods (default: 0.99).
+            - "n_folds": Number of folds for CV methods (default: 5).
+            - "n_bootstrap": Bootstrap iterations (default: 30).
+            - "calibration_size": Size of the calibration set (default: 0.2).
+            - "random_state": Random seed for reproducibility.
+            - "cv": Cross-validation scheme or "split".
+            - "fit_ratio": Split ratio for CQR calibration (default: 0.8).
+            - "K": Number of folds for CV+ (default: 5).
+            - "gpd_threshold_quantile": Quantile threshold for GPD fit in Extreme CP (default: 0.9).
+            - "device": Compute device for AlphaNet ("cpu" or "cuda") (default: "cpu").
+        output_config: Directory/export settings, either an OutputConfig or a dictionary.
+        split_config: Data splitting configuration, either a SplitConfig or a dictionary.
 
     Returns:
-        ConformalResult with predictions and metrics for each method.
+        A ConformalResult object containing the evaluation metrics, predictions, and artifact paths.
     """
     bundle = prepare_data_bundle(data=data, target_col=target_col, split_config=split_config)
     model_ids = model_registry.validate_models(models=models, phase=PHASE_CONFORMAL_ADVANCED)

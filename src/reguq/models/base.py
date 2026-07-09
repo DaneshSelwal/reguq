@@ -35,7 +35,7 @@ class BaseUQRegressor(BaseEstimator, RegressorMixin):
         backend: str = "matplotlib",
         max_points: int = 300,
         title: str | None = None,
-    ):
+    ) -> Any:
         """Plot the predictions and uncertainty intervals.
         
         Args:
@@ -73,7 +73,14 @@ class BaseUQRegressor(BaseEstimator, RegressorMixin):
         else:
             return self._plot_matplotlib(y_pred, y_lower, y_upper, y_true, title_str)
             
-    def _plot_matplotlib(self, y_pred, y_lower, y_upper, y_true, title):
+    def _plot_matplotlib(
+        self,
+        y_pred: np.ndarray,
+        y_lower: np.ndarray,
+        y_upper: np.ndarray,
+        y_true: np.ndarray | None,
+        title: str,
+    ) -> Any:
         import matplotlib.pyplot as plt
         
         x = np.arange(len(y_pred))
@@ -100,7 +107,14 @@ class BaseUQRegressor(BaseEstimator, RegressorMixin):
             
         return fig
         
-    def _plot_plotly(self, y_pred, y_lower, y_upper, y_true, title):
+    def _plot_plotly(
+        self,
+        y_pred: np.ndarray,
+        y_lower: np.ndarray,
+        y_upper: np.ndarray,
+        y_true: np.ndarray | None,
+        title: str,
+    ) -> Any:
         try:
             import plotly.graph_objects as go
         except ImportError:

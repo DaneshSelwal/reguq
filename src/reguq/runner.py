@@ -39,6 +39,19 @@ def _extract_data_input(data_cfg: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def run_from_config(config_or_path: Mapping[str, Any] | str | Path) -> PipelineRunResult:
+    """Run a multi-phase uncertainty quantification pipeline from a configuration.
+
+    Loads pipeline settings (data paths, models, phases, parameter sources, tuning options)
+    from a dictionary or file path, executes the requested phases (Tuning, Quantile,
+    Probabilistic, Standard/Advanced Conformal), collects results, and generates a unified
+    report.
+
+    Args:
+        config_or_path: A configuration dictionary or the file path (YAML/JSON) containing it.
+
+    Returns:
+        A PipelineRunResult object containing the run ID, configuration copy, and results per phase.
+    """
     config = load_config(config_or_path)
 
     data_cfg = dict(config.get("data", {}))
