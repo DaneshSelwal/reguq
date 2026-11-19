@@ -40,13 +40,16 @@ qrf = ["quantile-forest>=1.3"]
 treeffuser = ["treeffuser>=0.1"]
 mapie = ["mapie>=1.0"]
 puncc = ["puncc>=0.8"]
-tuning = ["optuna>=3.6"]
+tuning = ["optuna>=3.6", "optunahub>=0.1"]
 report = ["matplotlib>=3.7", "openpyxl>=3.1", "XlsxWriter>=3.1", "PyYAML>=6.0"]
 explain = ["shap>=0.44", "lime>=0.2"]
 all = [
   "reguq[boosting,gpboost,ngboost,torch,pgbm,tabnet,qrf,treeffuser,mapie,puncc,tuning,report,explain]",
 ]
 dev = ["pytest>=7.4", "ruff>=0.5"]
+
+[project.scripts]
+reguq-run = "reguq.pipeline:main"
 
 [project.urls]
 Homepage = "https://github.com/DaneshSelwal/reguq"
