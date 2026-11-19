@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0.dev0] - unreleased (branch `v1.0-rewrite`)
+Complete rewrite of the UQ core. See `docs/audit/notebooks-v1.2.md` for why.
+
+### Changed
+- Core install is numpy/scipy/pandas/scikit-learn only; all backends are extras with `>=` bounds.
+- One estimator contract: `fit`, `predict -> (n,)`, `predict_interval(X, alpha) -> (n, 2)`,
+  `predict_dist` for distributional models.
+- Calibration is always on data the model was not fitted on; `time_ordered=True` never shuffles.
+- Tuning uses training data only (CV / forward chaining); pruners work.
+- Failures are reported, never silently replaced by another method.
+
+### Added
+- Paper-faithful: split/normalized CP, CQR, CV+/Jackknife+/minmax, J+aB, NexCP, ACI, DtACI/FACI,
+  SF-OGD, SAOCP, online NexCP, POT/GPD tail, ACP; multi-quantile with rearrangement, QRF, TabNet;
+  NGBoost, PGBM, IBUG, CARD, HCM, Treeffuser.
+- Metrics: Winkler interval score, weighted quantile CRPS, sample CRPS, PIT, ENCE, size-stratified coverage.
+- Monte-Carlo tests of coverage guarantees and causality of online methods.
+
+### Removed
+- 0.2 `run_*` phase API, Colab bootstrap, Excel-first export, mislabelled heuristics
+  ("NexCP-Full", fixed-window "SAOCP", "MFCS-Split", "COP").
+  MFCS (model-free conformal *selection*) is a selection procedure rather than an interval method and is
+  out of scope for v1.0.
+
 ## [0.2.0] - 2026-03-22
 ### Added
 - **New Models (4)**: Random Forest, Gradient Boosting, GPBoost, TabNet
