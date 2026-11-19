@@ -216,7 +216,7 @@ class IBUGRegressor(BaseDistributionalRegressor):
         self.k_ = ks[best]
         sv = std_val[:, best]
         pos = sv[sv > 1e-12]
-        self.min_scale_ = float(pos.min()) if pos.size else 1e-12
+        self.min_scale_ = float(np.min(pos)) if pos.size else 1e-12
         sv = np.maximum(sv, self.min_scale_)
         self.gamma_, self.delta_ = 1.0, 0.0
         if self.variance_calibration:

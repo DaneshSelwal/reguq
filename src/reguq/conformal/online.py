@@ -38,6 +38,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from scipy.special import logsumexp
 
 from .._base import ArrayLike, BaseIntervalRegressor, as_1d_float, as_interval, check_alpha
 from .._utils import check_fitted, fit_clone, predict_1d
@@ -134,7 +135,7 @@ class DtACI(OnlineTracker):
 
     @property
     def alpha_t(self) -> float:
-        p = np.exp(self.log_w - np.logaddexp.reduce(self.log_w))
+        p = np.exp(self.log_w - logsumexp(self.log_w))
         return float(p @ self.alphas)
 
     def predict(self) -> float:
@@ -146,9 +147,9 @@ class DtACI(OnlineTracker):
             beta = float(np.mean(hist >= score))
             losses = _pinball(beta, self.alphas, self.alpha)
             wbar = self.log_w - self.eta * losses
-            total = np.logaddexp.reduce(wbar)
+            total = logsumexp(wbar)
             mixed = np.logaddexp(np.log1p(-self.sigma) + wbar, np.log(self.sigma / self.k) + total)
-            self.log_w = mixed - np.logaddexp.reduce(mixed)
+            self.log_w = mixed - logsumexp(mixed)
             err = (self.alphas > beta).astype(float)
             self.alphas = np.clip(self.alphas + self.gammas * (self.alpha - err), 0.0, 1.0)
         self.scores.append(float(score))
