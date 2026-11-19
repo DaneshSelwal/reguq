@@ -37,7 +37,7 @@ boosting = ["lightgbm>=4.0", "xgboost>=2.0", "catboost>=1.2"]
 gpboost = ["gpboost>=1.5"]
 ngboost = ["ngboost>=0.5"]
 torch = ["torch>=2.0"]
-pgbm = ["pgbm>=2.2", "torch>=2.0"]
+pgbm = ["pgbm>=2.2; python_version < '3.12'", "torch>=2.0"]  # pgbm supports Python < 3.12 only
 tabnet = ["pytorch-tabnet>=4.1", "torch>=2.0"]
 qrf = ["quantile-forest>=1.3"]
 treeffuser = ["treeffuser>=0.1"]

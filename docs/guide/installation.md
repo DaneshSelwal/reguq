@@ -20,10 +20,10 @@ install.
 | `boosting` | lightgbm, xgboost, catboost | boosted base models and quantile objectives |
 | `gpboost` | gpboost | GPBoost base model |
 | `ngboost` | ngboost | `NGBoostRegressor` |
-| `pgbm` | pgbm, torch | `PGBMRegressor` |
+| `pgbm` | pgbm, torch | `PGBMRegressor` (**Python ≤ 3.11**: pgbm 2.3 does not support newer Python) |
 | `torch` | torch | `CARDRegressor`, `HCMRegressor`, ACP with `policy="mlp"` |
 | `tabnet` | pytorch-tabnet, torch | `TabNetRegressor` |
-| `qrf` | quantile-forest | `QuantileForestRegressor` |
+| `qrf` | quantile-forest | `QuantileForestRegressor` (install a quantile-forest release built for your scikit-learn; 1.5 needs scikit-learn ≥ 1.9) |
 | `treeffuser` | treeffuser | `TreeffuserRegressor` |
 | `tuning` | optuna, optunahub | `reguq.tuning`, pipeline tuning |
 | `report` | matplotlib, openpyxl, XlsxWriter, PyYAML | `reguq.reporting`, YAML configs |
@@ -41,3 +41,14 @@ install.
 ```bash
 python -c "import reguq, sys; print(reguq.__version__); assert 'torch' not in sys.modules"
 ```
+
+## Offline environments (e.g. Kaggle without internet)
+
+Build the wheel with `pip wheel --no-deps .`, then download the backend wheels for the target platform:
+
+```bash
+pip download --no-deps --only-binary=:all: --platform manylinux_2_28_x86_64 \
+    --python-version 3.13 --implementation cp -d wheels ngboost lifelines quantile-forest gpboost
+```
+
+Upload them as a dataset and install with `pip install --no-index --find-links wheels --no-deps …`.
