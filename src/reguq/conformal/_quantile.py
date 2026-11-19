@@ -124,3 +124,19 @@ def weighted_conformal_quantile(
     if idx >= s.size:
         return float(np.inf)
     return float(s[order][idx])
+
+
+def weighted_lower_quantile(
+    values: ArrayLike,
+    weights: ArrayLike,
+    alpha: float,
+    test_weight: float = 1.0,
+) -> float:
+    """Weighted lower quantile with the test point's mass at :math:`-\\infty`.
+
+    Lower end of the weighted (non-exchangeable) jackknife+ / CV+ interval of
+    Barber et al. (2023, Sec. 3). With unit weights it equals
+    :func:`conformal_lower_quantile` (the ``floor(alpha(n+1))``-th smallest).
+    """
+    v = _validate_scores(values)
+    return -weighted_conformal_quantile(-v, weights, alpha, test_weight=test_weight)
