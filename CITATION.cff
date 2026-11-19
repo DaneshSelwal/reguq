@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use reguq, please cite it as below, and cite the papers of the methods you use (see docs/bibliography.md)."
+title: "reguq: regression uncertainty quantification with tested guarantees"
+type: software
+authors:
+  - family-names: Selwal
+    given-names: Danesh
+repository-code: "https://github.com/DaneshSelwal/reguq"
+license: MIT
+version: 1.0.0.dev0
+keywords: [uncertainty quantification, conformal prediction, quantile regression, probabilistic regression]

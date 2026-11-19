@@ -70,7 +70,7 @@ intervals = aci.predict_interval_online(X_test, y_test)    # interval at t uses 
 | Treeffuser | `probabilistic.TreeffuserRegressor` | model-based | Beltran-Velez et al. 2024 |
 
 A model-based distribution can be given a finite-sample guarantee by using its predicted std as the
-scale of a normalized split-conformal score (`probabilistic.StdEstimator`).
+scale of a normalized split-conformal score (`probabilistic.StdEstimator` with `prefit=True`).
 
 ## Metrics
 
@@ -92,13 +92,26 @@ Hyper-parameters are tuned **on the training data only** (cross-validation or fo
 shared by every method. The test set is touched once, for evaluation. A method that fails is
 reported with its error message; it is never silently replaced by another method.
 
+## Documentation
+
+Full documentation, with the theory, formulas and guarantees of every method, the API reference and
+the bibliography, is in [`docs/`](docs/) and is published at <https://daneshselwal.github.io/reguq/>.
+Build it locally with `pip install -e ".[docs]" && mkdocs serve`.
+
+## Citing
+
+Please cite reguq (see [`CITATION.cff`](CITATION.cff)) **and** the papers of the methods you use
+([bibliography](docs/bibliography.md)).
+
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-ruff check . && ruff format --check .
-pytest -m "not slow"          # statistical tests are marked `statistical`
+pip install -e ".[dev]" && pre-commit install
+ruff check . && ruff format --check . && mypy
+pytest -m "not slow" --cov=reguq          # statistical tests are marked `statistical`
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules every method must follow.
 
 ## License
 

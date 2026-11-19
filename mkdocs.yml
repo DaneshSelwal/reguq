@@ -1,0 +1,89 @@
+site_name: reguq
+site_description: Regression uncertainty quantification with tested guarantees
+site_url: https://daneshselwal.github.io/reguq/
+repo_url: https://github.com/DaneshSelwal/reguq
+repo_name: DaneshSelwal/reguq
+edit_uri: edit/main/docs/
+copyright: MIT License
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: {icon: material/brightness-7, name: Dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: {icon: material/brightness-4, name: Light mode}
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - tables
+  - toc: {permalink: true}
+  - pymdownx.arithmatex: {generic: true}
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed: {alternate_style: true}
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: numpy
+            show_source: false
+            show_root_heading: true
+            show_signature_annotations: true
+            separate_signature: true
+            members_order: source
+            filters: ["!^_"]
+            merge_init_into_class: true
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: guide/installation.md
+      - Quick start: guide/quickstart.md
+      - Choosing a method: guide/choosing.md
+      - Time series and drift: guide/time-series.md
+      - Pipeline and CLI: guide/pipeline.md
+  - Methods (theory):
+      - Conformal foundations: methods/conformal-foundations.md
+      - Split conformal and CQR: methods/split-cqr.md
+      - Jackknife+, CV+, J+aB: methods/resampling.md
+      - Non-exchangeable (NexCP): methods/nexcp.md
+      - Online (ACI, DtACI, SF-OGD, SAOCP): methods/online.md
+      - Extreme-value tails (POT/GPD): methods/extreme.md
+      - Adaptive coverage policies (ACP): methods/acp.md
+      - Quantile regression: methods/quantile.md
+      - Probabilistic models: methods/probabilistic.md
+      - Metrics: methods/metrics.md
+  - API reference:
+      - reguq.conformal: api/conformal.md
+      - reguq.quantile: api/quantile.md
+      - reguq.probabilistic: api/probabilistic.md
+      - reguq.metrics: api/metrics.md
+      - reguq.splits: api/splits.md
+      - reguq.models and reguq.tuning: api/models-tuning.md
+      - reguq.pipeline: api/pipeline.md
+      - reguq.reporting: api/reporting.md
+  - Audit of v1.2 notebooks: audit/notebooks-v1.2.md
+  - Bibliography: bibliography.md
+  - Changelog: changelog.md
+  - Contributing: contributing.md

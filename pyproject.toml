@@ -20,6 +20,8 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Typing :: Typed",
 ]
 # Core stays light: every heavy backend is an optional extra.
 dependencies = [
@@ -61,6 +63,8 @@ reguq-run = "reguq.pipeline.cli:main"
 Homepage = "https://github.com/DaneshSelwal/reguq"
 Repository = "https://github.com/DaneshSelwal/reguq"
 Issues = "https://github.com/DaneshSelwal/reguq/issues"
+Documentation = "https://daneshselwal.github.io/reguq/"
+Changelog = "https://github.com/DaneshSelwal/reguq/blob/main/CHANGELOG.md"
 
 [tool.setuptools.dynamic]
 version = { attr = "reguq._version.__version__" }

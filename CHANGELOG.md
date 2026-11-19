@@ -19,6 +19,13 @@ Complete rewrite of the UQ core. See `docs/audit/notebooks-v1.2.md` for why.
   NGBoost, PGBM, IBUG, CARD, HCM, Treeffuser.
 - Metrics: Winkler interval score, weighted quantile CRPS, sample CRPS, PIT, ENCE, size-stratified coverage.
 - Monte-Carlo tests of coverage guarantees and causality of online methods.
+- `reguq.reporting`: interval, PIT-reliability, coverage-vs-width and binned-coverage plots; Excel export.
+- Pipeline split into `config` (validated on construction), `data`, `methods`, `evaluate`, `runner`,
+  `export`, `cli`; `reguq-run -v`; logging instead of print.
+- Engineering: mypy-clean and typed (`py.typed`), coverage, pre-commit, Dependabot, CI build check
+  (`twine check`), release workflow (tag -> tested wheel -> GitHub release -> PyPI trusted publishing),
+  MkDocs documentation with theory pages, API reference and bibliography.
+- `CITATION.cff`, `CONTRIBUTING.md`, `SECURITY.md`, issue and PR templates.
 
 ### Removed
 - 0.2 `run_*` phase API, Colab bootstrap, Excel-first export, mislabelled heuristics
