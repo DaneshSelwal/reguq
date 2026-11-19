@@ -28,9 +28,11 @@ class NGBoostRegressor(BaseDistributionalRegressor):
         n_estimators: int = 500,
         learning_rate: float = 0.01,
         minibatch_frac: float = 1.0,
+        early_stopping_rounds: int | None = None,
         random_state: int | None = None,
         ngb_params: dict[str, Any] | None = None,
     ) -> None:
+        self.early_stopping_rounds = early_stopping_rounds
         self.n_estimators = n_estimators
         self.learning_rate = learning_rate
         self.minibatch_frac = minibatch_frac
@@ -56,7 +58,11 @@ class NGBoostRegressor(BaseDistributionalRegressor):
             verbose=False,
             **(self.ngb_params or {}),
         )
-        kw = {} if X_val is None else {"X_val": X_val, "Y_val": as_1d_float(y_val)}
+        kw: dict[str, Any] = {}
+        if X_val is not None:
+            kw = {"X_val": X_val, "Y_val": as_1d_float(y_val)}
+            if self.early_stopping_rounds is not None:
+                kw["early_stopping_rounds"] = self.early_stopping_rounds
         self.model_.fit(X, as_1d_float(y), **kw)
         return self
 

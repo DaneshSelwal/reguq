@@ -80,10 +80,13 @@ def test_ngboost_sigma_is_std():
     from reguq.probabilistic import NGBoostRegressor
 
     rng = np.random.default_rng(4)
-    X, y = make_linear(800, rng)  # homoscedastic noise sd = 1
-    m = NGBoostRegressor(n_estimators=300, learning_rate=0.05, random_state=0).fit(X[:600], y[:600])
-    d = m.predict_dist(X[600:])
-    assert 0.6 < np.median(d.sigma) < 1.6
+    X, y = make_linear(1500, rng)
+    y = y * 4.0  # noise sd 4: std -> ~4, variance would be ~16, sqrt(std) ~2
+    m = NGBoostRegressor(
+        n_estimators=500, learning_rate=0.05, random_state=0, early_stopping_rounds=20
+    ).fit(X[:1000], y[:1000], X_val=X[1000:1250], y_val=y[1000:1250])
+    d = m.predict_dist(X[1250:])
+    assert 2.6 < np.median(d.sigma) < 6.5
 
 
 def test_pgbm_returns_std():
