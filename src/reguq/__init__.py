@@ -8,7 +8,7 @@ estimators that need them, and are installed through extras
 
 from __future__ import annotations
 
-from . import conformal, metrics, splits
+from . import conformal, metrics, probabilistic, quantile, splits
 from ._base import BaseIntervalRegressor, check_alpha
 from ._version import __version__
 from .splits import train_calib_split
@@ -19,6 +19,8 @@ __all__ = [
     "check_alpha",
     "conformal",
     "metrics",
+    "probabilistic",
+    "quantile",
     "splits",
     "train_calib_split",
 ]
