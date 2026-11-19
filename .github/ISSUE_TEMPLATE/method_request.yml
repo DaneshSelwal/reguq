@@ -1,0 +1,18 @@
+name: Method request
+description: Propose a new UQ method
+labels: [enhancement]
+body:
+  - type: input
+    id: paper
+    attributes:
+      label: Paper (title, venue, year, link)
+    validations: {required: true}
+  - type: textarea
+    id: guarantee
+    attributes:
+      label: What does the method guarantee, and under which assumptions?
+    validations: {required: true}
+  - type: input
+    id: reference
+    attributes:
+      label: Reference implementation (if any)

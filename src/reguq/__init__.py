@@ -1,67 +1,29 @@
-"""reguq package - Regression Uncertainty Quantification."""
+"""reguq: regression uncertainty quantification with tested guarantees.
+
+The top-level import only depends on numpy / scipy / pandas / scikit-learn.
+Backends such as torch, LightGBM or MAPIE are imported lazily, inside the
+estimators that need them, and are installed through extras
+(``pip install "reguq[boosting,torch]"``).
+"""
 
 from __future__ import annotations
 
-from .api import (
-    run_conformal_standard,
-    run_conformal_advanced,
-    run_from_config,
-    run_probabilistic,
-    run_probabilistic_advanced,
-    run_quantile,
-    run_tuning,
-    run_explainability,
-    explain_shap,
-    explain_lime,
-    explain_interpret,
-    CARDRegressor,
-    IBUGRegressor,
-    ConformalRegressor,
-    QuantileRegressor,
-    ProbabilisticRegressor,
-)
-from .colab import bootstrap_colab_environment
-from .types import (
-    ConformalResult,
-    DataBundle,
-    OutputConfig,
-    ParamsSourceConfig,
-    PhaseResult,
-    PipelineRunResult,
-    SplitConfig,
-    TuningResult,
-)
+from . import conformal, metrics, models, pipeline, probabilistic, quantile, splits, tuning
+from ._base import BaseIntervalRegressor, check_alpha
+from ._version import __version__
+from .splits import train_calib_split
 
 __all__ = [
-    # Core pipeline functions
-    "run_tuning",
-    "run_quantile",
-    "run_probabilistic",
-    "run_conformal_standard",
-    "run_from_config",
-    "bootstrap_colab_environment",
-    # Advanced methods
-    "run_conformal_advanced",
-    "run_probabilistic_advanced",
-    "run_explainability",
-    # CARD & IBUG classes
-    "CARDRegressor",
-    "IBUGRegressor",
-    # Object-Oriented Models
-    "ConformalRegressor",
-    "QuantileRegressor",
-    "ProbabilisticRegressor",
-    # Explainability functions
-    "explain_shap",
-    "explain_lime",
-    "explain_interpret",
-    # Types
-    "SplitConfig",
-    "OutputConfig",
-    "ParamsSourceConfig",
-    "DataBundle",
-    "PhaseResult",
-    "TuningResult",
-    "ConformalResult",
-    "PipelineRunResult",
+    "BaseIntervalRegressor",
+    "__version__",
+    "check_alpha",
+    "conformal",
+    "metrics",
+    "models",
+    "pipeline",
+    "probabilistic",
+    "quantile",
+    "splits",
+    "train_calib_split",
+    "tuning",
 ]

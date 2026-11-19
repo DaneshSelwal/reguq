@@ -1,15 +1,12 @@
-"""Models package for reguq."""
+"""Model registry: build point regressors by name, importing backends lazily.
+
+>>> from reguq.models import make_model
+>>> make_model("randomforest", {"n_estimators": 50}, random_state=0)  # doctest: +ELLIPSIS
+RandomForestRegressor(...)
+"""
 
 from __future__ import annotations
 
-from .base import BaseUQRegressor
-from .conformal import ConformalRegressor
-from .quantile import QuantileRegressor
-from .probabilistic import ProbabilisticRegressor
+from .registry import available_models, make_model, register_model
 
-__all__ = [
-    "BaseUQRegressor",
-    "ConformalRegressor",
-    "QuantileRegressor",
-    "ProbabilisticRegressor",
-]
+__all__ = ["available_models", "make_model", "register_model"]
