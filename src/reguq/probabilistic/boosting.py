@@ -211,7 +211,7 @@ class IBUGRegressor(BaseDistributionalRegressor):
         ks = (int(self.k),) if self.k is not None else tuple(k for k in _K_GRID if k <= n_tr)
         mu_val = predict_1d(self.model_, s.X_calib)
         std_val = self._neighbor_std(s.X_calib, ks) + 1e-12
-        scores = [gaussian_nll(s.y_calib, mu_val, std_val[:, j]) for j in range(len(ks))]
+        scores = [float(gaussian_nll(s.y_calib, mu_val, std_val[:, j])) for j in range(len(ks))]
         best = int(np.argmin(scores))
         self.k_ = ks[best]
         sv = std_val[:, best]
@@ -230,7 +230,7 @@ class IBUGRegressor(BaseDistributionalRegressor):
                         cand = sv + val if op == "add" else sv * val
                         if (cand <= 0).any():
                             continue
-                        sc = gaussian_nll(s.y_calib, mu_val, cand)
+                        sc = float(gaussian_nll(s.y_calib, mu_val, cand))
                         if sc < best_score:
                             best_score = sc
                             self.gamma_, self.delta_ = (1.0, val) if op == "add" else (val, 0.0)

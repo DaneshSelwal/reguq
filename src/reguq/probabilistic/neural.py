@@ -70,7 +70,7 @@ def _device(device: str) -> Any:
 def _card_network(torch: Any, x_dim: int, n_steps: int, hidden: int) -> Any:
     nn = torch.nn
 
-    class ConditionalLinear(nn.Module):
+    class ConditionalLinear(nn.Module):  # type: ignore[name-defined]
         def __init__(self, num_in: int, num_out: int) -> None:
             super().__init__()
             self.lin = nn.Linear(num_in, num_out)
@@ -80,7 +80,7 @@ def _card_network(torch: Any, x_dim: int, n_steps: int, hidden: int) -> Any:
         def forward(self, x: Any, t: Any) -> Any:
             return self.embed(t) * self.lin(x)
 
-    class Guided(nn.Module):
+    class Guided(nn.Module):  # type: ignore[name-defined]
         def __init__(self) -> None:
             super().__init__()
             self.l1 = ConditionalLinear(x_dim + 2, hidden)

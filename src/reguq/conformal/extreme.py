@@ -34,7 +34,7 @@ from ._quantile import conformal_quantile
 
 def gpd_tail_quantile(
     scores: ArrayLike, alpha: float, threshold: float = 0.9, min_exceedances: int = 10
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """Fit a GPD above the ``threshold`` empirical quantile and return the ``1-alpha`` quantile.
 
     Returns a dict with ``q``, ``u``, ``xi``, ``sigma``, ``n_exceed`` and

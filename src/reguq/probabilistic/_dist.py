@@ -54,10 +54,10 @@ class GaussianPrediction:
         return self.mu[:, None] + self.sigma[:, None] * rng.standard_normal((self.mu.size, m))
 
     def crps(self, y: ArrayLike) -> float:
-        return crps_gaussian(y, self.mu, self.sigma)
+        return float(crps_gaussian(y, self.mu, self.sigma))
 
     def nll(self, y: ArrayLike) -> float:
-        return gaussian_nll(y, self.mu, self.sigma)
+        return float(gaussian_nll(y, self.mu, self.sigma))
 
     def pit(self, y: ArrayLike) -> np.ndarray:
         return pit_gaussian(y, self.mu, self.sigma)
@@ -96,11 +96,11 @@ class SamplePrediction:
         return np.take_along_axis(self.samples, idx, axis=1)
 
     def crps(self, y: ArrayLike) -> float:
-        return crps_sample(y, self.samples, fair=True)
+        return float(crps_sample(y, self.samples, fair=True))
 
     def nll(self, y: ArrayLike) -> float:
         """Gaussian NLL using the sample mean and std (a moment approximation)."""
-        return gaussian_nll(y, self.mean(), np.maximum(self.std(), 1e-12))
+        return float(gaussian_nll(y, self.mean(), np.maximum(self.std(), 1e-12)))
 
     def pit(self, y: ArrayLike, random_state: int | None = 0) -> np.ndarray:
         return pit_sample(y, self.samples, random_state=random_state)

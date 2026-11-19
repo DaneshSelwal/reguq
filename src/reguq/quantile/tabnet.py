@@ -75,10 +75,11 @@ class TabNetRegressor(RegressorMixin, BaseEstimator):
         if q is not None:
             if not 0 < q < 1:
                 raise ValueError("quantile must lie in (0, 1)")
+            qv: float = q
 
             def pinball_torch(y_pred: Any, y_true: Any) -> Any:
                 e = y_true - y_pred
-                return torch.mean(torch.maximum(q * e, (q - 1) * e))
+                return torch.mean(torch.maximum(qv * e, (qv - 1) * e))
 
             class Pinball(Metric):
                 _name = "pinball"
@@ -86,7 +87,7 @@ class TabNetRegressor(RegressorMixin, BaseEstimator):
 
                 def __call__(self, y_true: np.ndarray, y_score: np.ndarray) -> float:
                     e = y_true - y_score
-                    return float(np.mean(np.maximum(q * e, (q - 1) * e)))
+                    return float(np.mean(np.maximum(qv * e, (qv - 1) * e)))
 
             kwargs = {"loss_fn": pinball_torch, "eval_metric": [Pinball]}
         self.model_ = _TabNet(seed=self.random_state, verbose=0, **(self.tabnet_params or {}))

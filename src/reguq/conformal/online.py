@@ -384,10 +384,11 @@ class OnlineConformalRegressor(BaseIntervalRegressor):
         y_arr = as_1d_float(y)
         mu = predict_1d(self.estimator_, X)
         radii = np.empty(y_arr.size)
-        alphas = np.empty(y_arr.size) if hasattr(self.tracker_, "alpha_t") else None
+        has_alpha = hasattr(self.tracker_, "alpha_t")
+        alphas = np.empty(y_arr.size) if has_alpha else None
         for t in range(y_arr.size):
             if alphas is not None:
-                alphas[t] = self.tracker_.alpha_t
+                alphas[t] = getattr(self.tracker_, "alpha_t")  # noqa: B009
             radii[t] = self.tracker_.predict()
             self.tracker_.update(abs(y_arr[t] - mu[t]))
         self.radius_history_ = radii

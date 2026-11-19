@@ -44,7 +44,7 @@ def interval_report(
         "coverage": coverage(y_true, interval),
         "mean_width": mean_width(y_true, interval),
         "normalized_width": normalized_mean_width(y_true, interval),
-        "interval_score": interval_score(y_true, interval, alpha=alpha),
+        "interval_score": float(interval_score(y_true, interval, alpha=alpha)),
         "cwc": coverage_width_criterion(y_true, interval, alpha=alpha),
         "ssc": size_stratified_coverage(y_true, interval, n_bins=n_bins),
     }
