@@ -15,3 +15,15 @@ outputs/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Build / tooling output
+build/
+dist/
+site/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Pipeline results (keep out of the repo; publish via Kaggle/releases)
+results/

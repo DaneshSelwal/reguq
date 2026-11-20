@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [1.0.0.dev0] - unreleased (branch `v1.0-rewrite`)
 Complete rewrite of the UQ core. See `docs/audit/notebooks-v1.2.md` for why.
 
+### Removed
+- `Data_folder/` (copies of the v1.2 notebooks with empty placeholder Excel files) and the
+  accidentally committed `build/` directory. The v1.2 notebooks live in
+  `Regression_Uncertainty_Quantification_Analysis`; the audit is in `docs/audit/`.
+
 ### Changed
 - Core install is numpy/scipy/pandas/scikit-learn only; all backends are extras with `>=` bounds.
 - One estimator contract: `fit`, `predict -> (n,)`, `predict_interval(X, alpha) -> (n, 2)`,
