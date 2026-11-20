@@ -92,6 +92,11 @@ Hyper-parameters are tuned **on the training data only** (cross-validation or fo
 shared by every method. The test set is touched once, for evaluation. A method that fails is
 reported with its error message; it is never silently replaced by another method.
 
+## Use cases
+
+- [Daily sediment load](examples/use_cases/sediment_load.ipynb): a time series with a regime change;
+  6 tuned models × 14 methods ([results](docs/use-cases/sediment-load.md)).
+
 ## Documentation
 
 Full documentation, with the theory, formulas and guarantees of every method, the API reference and

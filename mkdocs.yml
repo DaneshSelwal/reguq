@@ -74,6 +74,8 @@ nav:
       - Quantile regression: methods/quantile.md
       - Probabilistic models: methods/probabilistic.md
       - Metrics: methods/metrics.md
+  - Use cases:
+      - Sediment load (time series): use-cases/sediment-load.md
   - API reference:
       - reguq.conformal: api/conformal.md
       - reguq.quantile: api/quantile.md
